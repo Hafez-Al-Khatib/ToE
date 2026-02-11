@@ -1,0 +1,22 @@
+[project]
+name = "natural-intelligence"
+version = "0.1.0"
+description = "Physics of Intelligence: Energy-Based Learning with Hamiltonian Dynamics"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "tqdm>=4.65.0",
+    "scipy>=1.10.0",
+]
+
+[project.optional-dependencies]
+control = ["gymnasium>=0.28.0"]
+dev = ["pytest>=7.0.0", "black>=23.0.0"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
