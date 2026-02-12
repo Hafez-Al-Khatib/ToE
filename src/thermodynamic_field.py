@@ -71,6 +71,7 @@ class ThermodynamicField(nn.Module):
         width: int = 28,
         n_filters: int = 16,
         filter_size: int = 5,
+        dynamics_mode: Optional[list] = None
     ):
         """
         Parameters
@@ -81,12 +82,16 @@ class ThermodynamicField(nn.Module):
             Number of learned spatial filters per channel.
         filter_size : int
             Kernel size for spatial filters (e.g., 5 = 5×5).
+        dynamics_mode : list of str, optional
+            List of 'non_conserved' or 'conserved' per channel.
+            Default is 'non_conserved' (Allen-Cahn) for all.
         """
         super().__init__()
         self.n_channels = n_channels
         self.height = height
         self.width = width
         self.n_filters = n_filters
+        self.dynamics_mode = dynamics_mode
         
         # === LEARNED: Spatial filter bank per channel ===
         # Energy: Σₖ wₖ |Kₖ * uᵢ|²
@@ -260,13 +265,19 @@ class ThermodynamicField(nn.Module):
         self,
         image: torch.Tensor,
         n_steps: int = 50,
-        return_trajectory: bool = False
+        return_trajectory: bool = False,
+        advection_field: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Denoise by iterated energy gradient descent.
+        Denoise by iterated energy gradient descent (+ optional advection).
         
-        At inference time, chains multiple one_step_denoise calls
-        with data fidelity anchoring.
+        Equation: ∂u/∂t = -∂E/∂u - v·∇u
+        
+        Parameters
+        ----------
+        advection_field : torch.Tensor, optional (B, 2, H, W) or (B, C, 2, H, W)
+            Velocity field v=(vx, vy) for advecting the state u.
+            Supports per-channel advection.
         """
         if image.dim() == 2:
             image = image.view(-1, 1, self.height, self.width)
@@ -287,11 +298,28 @@ class ThermodynamicField(nn.Module):
                 energy.sum(), u_input, create_graph=False
             )[0]
             
-            # Gradient descent + data fidelity
-            u = u_input.detach() - self.step_size.detach() * grad + \
-                self.data_weight.detach() * (anchor - u_input.detach())
+            # Gradient Flow: dt = -grad E + data_fidelity
+            update = -self.step_size.detach() * grad + \
+                     self.data_weight.detach() * (anchor - u_input.detach())
             
-            # Clamp to valid range
+            # Advection: -v·∇u
+            if advection_field is not None:
+                u_curr = u_input.detach()
+                u_pad = F.pad(u_curr, (1, 1, 1, 1), mode='replicate')
+                du_dx = (u_pad[:, :, 1:-1, 2:] - u_pad[:, :, 1:-1, :-2]) / 2.0
+                du_dy = (u_pad[:, :, 2:, 1:-1] - u_pad[:, :, :-2, 1:-1]) / 2.0
+                
+                if advection_field.dim() == 5: # (B, C, 2, H, W)
+                    vy = advection_field[:, :, 0] 
+                    vx = advection_field[:, :, 1]
+                else: # (B, 2, H, W)
+                    vy = advection_field[:, 0].unsqueeze(1) 
+                    vx = advection_field[:, 1].unsqueeze(1)
+                
+                advection = -(vx * du_dx + vy * du_dy)
+                update = update + self.step_size.detach() * advection
+            
+            u = u_input.detach() + update
             u = torch.clamp(u, -1.5, 1.5)
             
             if return_trajectory:
@@ -310,33 +338,20 @@ class ThermodynamicField(nn.Module):
         self,
         fields: torch.Tensor,
         n_steps: int = 10,
-        anchor: torch.Tensor = None
+        anchor: torch.Tensor = None,
+        advection_field: torch.Tensor = None
     ) -> torch.Tensor:
         """
-        Evolve fields with full gradient tracking for end-to-end training.
-        
-        Unlike evolve(), this uses create_graph=True at every step so
-        gradients flow through the entire N-step evolution. This teaches
-        the field dynamics HOW to propagate constraints over distance.
-        
-        Parameters
-        ----------
-        fields : torch.Tensor (B, n_channels, H, W)
-            Multi-channel field state (from initialize_fields).
-        n_steps : int
-            Number of evolution steps.
-        anchor : torch.Tensor, optional
-            Data fidelity anchor (defaults to initial fields).
-        
-        Returns
-        -------
-        evolved : torch.Tensor (B, n_channels, H, W)
-            Evolved field state.
+        Evolve fields with full gradient tracking.
+        Supports per-channel advection.
         """
         if anchor is None:
             anchor = fields.detach()
         
         u = fields
+        # Ensure we can compute dE/du
+        if not u.requires_grad:
+            u.requires_grad_(True)
         
         for step in range(n_steps):
             energy = self.compute_energy(u)
@@ -346,7 +361,25 @@ class ThermodynamicField(nn.Module):
             )[0]
             
             # Gradient descent + data fidelity anchoring
-            u = u - self.step_size * grad + self.data_weight * (anchor - u)
+            update = -self.step_size * grad + self.data_weight * (anchor - u)
+            
+            # Advection: -v·∇u (differentiable)
+            if advection_field is not None:
+                u_pad = F.pad(u, (1, 1, 1, 1), mode='replicate')
+                du_dx = (u_pad[:, :, 1:-1, 2:] - u_pad[:, :, 1:-1, :-2]) / 2.0
+                du_dy = (u_pad[:, :, 2:, 1:-1] - u_pad[:, :, :-2, 1:-1]) / 2.0
+                
+                if advection_field.dim() == 5: # (B, C, 2, H, W)
+                    vy = advection_field[:, :, 0] 
+                    vx = advection_field[:, :, 1]
+                else: # (B, 2, H, W)
+                    vy = advection_field[:, 0].unsqueeze(1) 
+                    vx = advection_field[:, 1].unsqueeze(1)
+                
+                advection = -(vx * du_dx + vy * du_dy)
+                update = update + self.step_size * advection
+                
+            u = u + update
         
         return u
 
@@ -404,6 +437,52 @@ def one_step_denoising_loss(
     }
     
     return loss, metrics
+
+
+def multi_step_denoising_loss(
+    model: ThermodynamicField,
+    x_clean: torch.Tensor,
+    n_steps: int = 5,
+    noise_std: float = 0.3
+) -> Tuple[torch.Tensor, dict]:
+    """
+    Multi-Step Denoising Loss: Backprop through time (BPTT).
+    
+    L = ‖evolve(x_noisy, K) - x_clean‖²
+    
+    Teaches the field dynamics how to solve problems that require
+    iterative propagation (like filling in large missing regions
+    or global constraint satisfaction). High memory cost!
+    """
+    H, W = model.height, model.width
+    
+    if x_clean.dim() == 2:
+        x_clean = x_clean.view(-1, 1, H, W)
+    elif x_clean.dim() == 3:
+        x_clean = x_clean.unsqueeze(1) # B, 1, H, W
+        
+    # Corrupt
+    noise = torch.randn_like(x_clean) * noise_std
+    x_noisy = x_clean + noise
+    
+    # Initialize fields (map input ch -> hidden ch)
+    fields = model.initialize_fields(x_noisy)
+    
+    # Evolve with gradient tracking through all steps
+    u_final = model.trainable_evolve(
+        fields, 
+        n_steps=n_steps, 
+        anchor=fields.detach() # Anchor to initial noisy state
+    )
+    
+    # We want the FIRST channel (corresponding to input) to match x_clean
+    # Or should we decode? The field IS the image for channel 0.
+    # initialize_fields puts image in ch0.
+    x_pred = u_final[:, 0:1, :, :]
+    
+    loss = F.mse_loss(x_pred, x_clean)
+    
+    return loss, {"loss": loss.item()}
 
 
 # =============================================================================

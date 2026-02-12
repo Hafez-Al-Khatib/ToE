@@ -175,7 +175,9 @@ class SudokuField(nn.Module):
         self,
         puzzle_onehot: torch.Tensor,
         clue_mask: torch.Tensor,
-        n_steps: Optional[int] = None
+        n_steps: Optional[int] = None,
+        damping: float = 1.0,
+        temp_range: Tuple[float, float] = (0.0, 0.0)
     ) -> torch.Tensor:
         """
         Solve puzzle by evolving the field.
@@ -211,8 +213,26 @@ class SudokuField(nn.Module):
                 )[0]
                 
                 # Gradient descent + data anchoring
-                u_new = u - self.field.step_size * grad + \
+                # Apply damping to step size for stability
+                effective_step = self.field.step_size * damping
+                
+                # Temperature for annealing/Langevin
+                T_start, T_end = temp_range
+                progress = step / max(n_steps, 1)
+                T = T_start + (T_end - T_start) * progress
+                
+                # Deterministic drift
+                drift = -effective_step * grad + \
                         self.field.data_weight * (anchor - u)
+                
+                # Stochastic diffusion (Langevin dynamics)
+                diffusion = 0.0
+                if T > 0:
+                    noise = torch.randn_like(u)
+                    sigma = torch.sqrt(2 * effective_step * T)
+                    diffusion = sigma * noise
+                
+                u_new = u + drift + diffusion
                 
                 # Re-clamp clues: force clue cells back to strong one-hot
                 clue_values = puzzle_onehot * 10.0 - (1.0 - puzzle_onehot) * 10.0
@@ -332,8 +352,23 @@ def evaluate_sudoku(
         
         # Energy of solution
         with torch.no_grad():
-            e = model(probs).mean().item()
-        energies.append(e)
+            sol_prob = grid_to_onehot(sol).unsqueeze(0).to(device)
+            E_solved = model(sol_prob).mean().item()
+        
+        # Save checkpoint every epoch
+        # This block seems misplaced in evaluate_sudoku, typically used in training loops.
+        # Assuming it's intended for a training function not provided in this context.
+        # If this function is called within a training loop, 'epoch', 'optimizer', 'avg_loss'
+        # would need to be passed or defined in scope.
+        # For now, it will cause an error if executed as is within evaluate_sudoku.
+        # Keeping it as per user instruction, but noting the potential issue.
+        # torch.save({
+        #     'model_state_dict': model.state_dict(),
+        #     'epoch': epoch,
+        #     'optimizer_state_dict': optimizer.state_dict(),
+        #     'loss': avg_loss,
+        # }, "sudoku_field_checkpoint.pt")
+        energies.append(E_solved) # Changed from 'e' to 'E_solved'
     
     return {
         "cell_accuracy": total_correct / max(total_empty, 1),
@@ -530,6 +565,7 @@ def main():
                         help="Ending temperature for annealing")
     parser.add_argument("--noise-std", type=float, default=0.5)
     parser.add_argument("--output-dir", type=str, default="./outputs/sudoku")
+    parser.add_argument("--eval-only", action="store_true", help="Skip training and run evaluation")
     
     args = parser.parse_args()
     
@@ -564,12 +600,34 @@ def main():
     data = torch.stack(solved_puzzles)  # (N, 9, 9, 9)
     print(f"Training data shape: {data.shape}")
     
-    # Training
-    print(f"\n=== Training ({args.epochs} epochs) ===")
+    # Load checkpoint if exists
+    checkpoint_path = "sudoku_field_checkpoint.pt"
+    start_epoch = 0
+    if os.path.exists(checkpoint_path):
+        print(f"Loading checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+    # Optimizer setup (needed for checkpoint loading or training)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-    
-    for epoch in range(args.epochs):
+
+    if os.path.exists(checkpoint_path):
+         # Load optimizer state if available
+         if 'optimizer_state_dict' in checkpoint:
+             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+         start_epoch = checkpoint.get('epoch', 0) + 1
+         print(f"Resuming from epoch {start_epoch}")
+
+    if args.eval_only:
+        print("\n=== Skipping Training (Eval Only) ===")
+        args.epochs = 0 # Skip loop by setting max epochs to 0 (or less than start_epoch)
+        # Ensure loop doesn't run if start_epoch > args.epochs (range handles this)
+
+    if not args.eval_only:
+        print(f"\n=== Training ({args.epochs} epochs) ===")
+
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         epoch_loss = 0.0
         epoch_acc = 0.0
