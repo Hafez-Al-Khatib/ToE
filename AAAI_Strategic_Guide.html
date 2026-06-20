@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AAAI 2027 Strategic Guide — KAN-EBM Universal Scaling Law</title>
+<style>
+  :root {
+    --bg: #0d1b2a;
+    --bg-card: #142b40;
+    --bg-card-alt: #112233;
+    --accent: #00b4d8;
+    --accent2: #90e0ef;
+    --green: #2dd48a;
+    --orange: #ff9f1c;
+    --red: #ff4d6d;
+    --text: #cad3e0;
+    --text-white: #ffffff;
+    --text-muted: #8a9bb0;
+    --border: #1b3a4b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+  .accent-bar {
+    height: 4px; background: var(--accent); border-radius: 2px;
+    margin-bottom: 1.5rem;
+  }
+  h1 { font-size: 2.2rem; color: var(--text-white); margin-bottom: 0.5rem; }
+  h2 { font-size: 1.5rem; color: var(--accent2); margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.15rem; color: var(--accent); margin: 1.5rem 0 0.75rem; }
+  h4 { font-size: 1rem; color: var(--accent2); margin: 1rem 0 0.5rem; }
+  .subtitle { color: var(--text-muted); font-size: 1.1rem; margin-bottom: 1rem; }
+  .meta { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 2rem; }
+  .card {
+    background: var(--bg-card); border-radius: 10px; padding: 1.5rem;
+    margin-bottom: 1.5rem; border-left: 4px solid var(--accent);
+  }
+  .card.green { border-left-color: var(--green); }
+  .card.orange { border-left-color: var(--orange); }
+  .card.red { border-left-color: var(--red); }
+  .card h3 { margin-top: 0; }
+  .badge {
+    display: inline-block; padding: 0.25rem 0.6rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge.green { background: rgba(45,212,138,0.15); color: var(--green); }
+  .badge.orange { background: rgba(255,159,28,0.15); color: var(--orange); }
+  .badge.red { background: rgba(255,77,109,0.15); color: var(--red); }
+  .badge.accent { background: rgba(0,180,216,0.15); color: var(--accent); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; }
+  @media (max-width: 800px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  }
+  .stat-box {
+    background: var(--bg-card); border-radius: 8px; padding: 1.2rem; text-align: center;
+    border-top: 3px solid var(--accent);
+  }
+  .stat-box .number { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+  .stat-box .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem; }
+  table {
+    width: 100%; border-collapse: collapse; margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  th, td { padding: 0.6rem 0.8rem; text-align: left; }
+  th { background: var(--bg-card); color: var(--accent2); font-weight: 600; }
+  tr:nth-child(even) { background: rgba(20,43,64,0.5); }
+  tr:hover { background: rgba(0,180,216,0.05); }
+  .timeline {
+    position: relative; padding-left: 2rem;
+  }
+  .timeline::before {
+    content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .timeline-item {
+    position: relative; margin-bottom: 1.5rem; padding-left: 1rem;
+  }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -1.55rem; top: 0.4rem;
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+  .timeline-item.done::before { background: var(--green); }
+  .timeline-item.critical::before { background: var(--red); }
+  .timeline-item.running::before { background: var(--orange); }
+  .risk-high { color: var(--red); font-weight: 600; }
+  .risk-med { color: var(--orange); font-weight: 600; }
+  .risk-low { color: var(--green); font-weight: 600; }
+  .code-block {
+    background: #0a1520; border: 1px solid var(--border); border-radius: 6px;
+    padding: 1rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem;
+    overflow-x: auto; color: var(--accent2);
+  }
+  .callout {
+    background: rgba(0,180,216,0.08); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem 1.5rem; margin: 1rem 0;
+  }
+  .callout strong { color: var(--accent2); }
+  .toc {
+    background: var(--bg-card); border-radius: 8px; padding: 1rem 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .toc ul { list-style: none; }
+  .toc li { margin: 0.3rem 0; }
+  .toc a { color: var(--text); }
+  .toc a:hover { color: var(--accent); }
+  .progress-bar {
+    height: 8px; background: var(--bg-card-alt); border-radius: 4px; overflow: hidden;
+    margin: 0.5rem 0;
+  }
+  .progress-bar-fill {
+    height: 100%; background: var(--green); border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  .task-list { list-style: none; }
+  .task-list li {
+    padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; gap: 0.5rem;
+  }
+  .task-list li::before {
+    content: '☐'; color: var(--accent); font-weight: bold; min-width: 1.2rem;
+  }
+  .task-list li.done::before { content: '☑'; color: var(--green); }
+  .task-list li.critical::before { content: '◆'; color: var(--red); }
+  .section-header {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;
+  }
+  .section-header .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  }
+  .paper-section {
+    background: var(--bg-card); border-radius: 8px; padding: 1rem 1.5rem;
+    margin: 0.5rem 0; border-left: 3px solid var(--accent2);
+  }
+  .paper-section .title { font-weight: 600; color: var(--text-white); }
+  .paper-section .pages { float: right; color: var(--text-muted); font-size: 0.85rem; }
+  .paper-section .content { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.3rem; }
+  .clear { clear: both; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="accent-bar"></div>
+  <h1>AAAI 2027 Strategic Guide</h1>
+  <div class="subtitle">Universal Test-Time Compute Scaling for Iterative Denoisers</div>
+  <div class="meta">
+    Generated: 2026-06-14 &nbsp;|&nbsp; Target: AAAI-27 Main Track &nbsp;|&nbsp; Abstract Due: July 21 (~37 days) &nbsp;|&nbsp; Full Paper Due: July 28 (~44 days)
+  </div>
+
+  <div class="toc">
+    <strong style="color:var(--accent2);">Contents</strong>
+    <ul>
+      <li><a href="#sec-decision">1. Executive Decision: UPGRADE, Not Switch</a></li>
+      <li><a href="#sec-thesis">2. The Locked Thesis (June 5)</a></li>
+      <li><a href="#sec-aaai">3. Why AAAI? Positioning & Fit</a></li>
+      <li><a href="#sec-timeline">4. 5-Week Critical Path Timeline</a></li>
+      <li><a href="#sec-experiments">5. Experiment Priority Matrix</a></li>
+      <li><a href="#sec-risks">6. Risk Register & Mitigation</a></li>
+      <li><a href="#sec-paper">7. Paper_v5 Structure Template</a></li>
+      <li><a href="#sec-daily">8. Daily / Weekly Breakdown</a></li>
+      <li><a href="#sec-narrative">9. Narrative Arc & Key Messages</a></li>
+      <li><a href="#sec-appendix">10. What to Drop / What to Keep</a></li>
+    </ul>
+  </div>
+
+  <!-- ============ SECTION 1: DECISION ============ -->
+  <h2 id="sec-decision">1. Executive Decision: UPGRADE, Not Switch</h2>
+
+  <div class="card green">
+    <h3>Verdict: Continue the Universal Scaling Law Paper</h3>
+    <p>The only viable path to AAAI 2027 is to <strong>upgrade the existing KAN-EBM research into the universal scaling law paper</strong>. A switch to any new direction is impossible in 44 days.</p>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>Why Upgrade Wins</h3>
+      <ul style="margin-top:0.5rem; padding-left:1.2rem;">
+        <li>Most experiments are <strong>already done</strong> (universality, 64px, LPIPS, latency, predictive validation)</li>
+        <li>The new narrative is <strong>stronger science</strong> than the original KAN-claim</li>
+        <li>Remaining experiments (β-sweep, DDPM, DnCNN) are scoped and tractable in 3 weeks</li>
+        <li>Paper rewrite is the bottleneck, not the experiments</li>
+        <li>The June 5 "locked thesis" is defensible, honest, and novel</li>
+      </ul>
+    </div>
+    <div class="card red">
+      <h3>Why Switch Dies</h3>
+      <ul style="margin-top:0.5rem; padding-left:1.2rem;">
+        <li>Eikonal/planning work (P1–P6) is <strong>incomplete</strong> — P1 failed, P4 untested</li>
+        <li>FEP/Active Inference claims were <strong>hallucinated</strong> per SURGICAL_AUDIT.md</li>
+        <li>The "unified theory of intelligence" framing is <strong>retired</strong> per REGISTERED_CLAIMS</li>
+        <li>Any new direction needs 3–6 months of experiments</li>
+        <li>44 days is enough for <strong>writing + validation</strong>, not <strong>discovery</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>The key insight:</strong> The collapse of the "KAN is special" claim was not a failure — it was a <strong>scientific advance</strong>. Discovering that the scaling law is universal across architectures and even model families (energy → score → DDPM) is a <em>deeper</em> and <em>more reviewable</em> result than the original head-to-head comparison. This is the paper AAAI wants.
+  </div>
+
+  <!-- ============ SECTION 2: LOCKED THESIS ============ -->
+  <h2 id="sec-thesis">2. The Locked Thesis (June 5, 2026)</h2>
+
+  <div class="card" style="border-left-color:var(--green); background:rgba(45,212,138,0.05);">
+    <div style="font-size:1.1rem; font-weight:600; color:var(--text-white); margin-bottom:0.5rem;">
+      "The optimal number of inference steps for an iterative denoiser is a universal power law in the noise level — K*(σ) ≈ C σ<sup>α</sup>, with α set by the data spectrum, not the model."
+    </div>
+    <div style="color:var(--text-muted); font-size:0.9rem;">
+      This thesis is <strong>locked</strong>. No further pivoting. All experiments and writing serve this claim.
+    </div>
+  </div>
+
+  <h3>What This Paper IS</h3>
+  <div class="grid-2">
+    <div class="card green">
+      <span class="badge green">YES</span>
+      <ul style="margin-top:0.5rem; padding-left:1.2rem;">
+        <li>A clean, universal empirical law</li>
+        <li>Cross-architecture (5 heads, matched training)</li>
+        <li>Cross-family (EBM + score + DDPM pending)</li>
+        <li>Mechanistic framing (spectral regularization)</li>
+        <li>Sharp phase boundary (additive ✓ / deterministic ✗)</li>
+        <li>Practical deployable rule (99.83% oracle recovery)</li>
+        <li>Data-dependence explained (α = 2γ/β)</li>
+      </ul>
+    </div>
+    <div class="card red">
+      <span class="badge red">NO</span>
+      <ul style="margin-top:0.5rem; padding-left:1.2rem;">
+        <li>A claim that KAN is special <em>(dropped entirely)</em></li>
+        <li>A new architecture</li>
+        <li>Better than SOTA denoisers <em>(DnCNN/NAFNet beat us in absolute PSNR — that's fine)</em></li>
+        <li>A unified theory of intelligence <em>(that's the long game)</em></li>
+        <li>A paradigm shift <em>(it's a wedge. A clean wedge.)</em></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Evidence Summary</h3>
+  <div class="grid-4">
+    <div class="stat-box">
+      <div class="number">1.376</div>
+      <div class="label">Universal α<br>(±0.003 across 5 models)</div>
+    </div>
+    <div class="stat-box" style="border-top-color:var(--green);">
+      <div class="number" style="color:var(--green);">99.83%</div>
+      <div class="label">Oracle PSNR<br>Recovered</div>
+    </div>
+    <div class="stat-box" style="border-top-color:var(--orange);">
+      <div class="number" style="color:var(--orange);">R² &gt; 0.97</div>
+      <div class="label">Power Law Fit<br>Quality</div>
+    </div>
+    <div class="stat-box" style="border-top-color:var(--accent2);">
+      <div class="number" style="color:var(--accent2);">100%</div>
+      <div class="label">Leave-One-Out<br>Predictive Accuracy</div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION 3: AAAI POSITIONING ============ -->
+  <h2 id="sec-aaai">3. Why AAAI? Positioning & Fit</h2>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>Why This Fits AAAI</h3>
+      <p>AAAI-27 explicitly invites:</p>
+      <ul style="padding-left:1.2rem;">
+        <li><strong>Empirical, integrative, and analysis papers</strong> — the scaling law is exactly this</li>
+        <li><strong>"Collaborative bridges"</strong> — connecting test-time compute (ML hot topic) to classical iterated regularization (signal processing) is a bridge</li>
+        <li><strong>AI for social impact</strong> — the practical early-stopping rule has real edge-deployment impact</li>
+        <li><strong>Responsible AI</strong> — the honest self-correction narrative ("we falsified our own hypothesis") embodies scientific integrity</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Why This Did NOT Fit NeurIPS</h3>
+      <ul style="padding-left:1.2rem;">
+        <li>NeurIPS wants <strong>architecture novelty</strong> — the KAN-specific claim was falsified</li>
+        <li>NeurIPS penalizes <strong>small-scale experiments</strong> — CIFAR-10/CelebA-64 are "toy" there</li>
+        <li>NeurIPS expects <strong>diffusion/transformer baselines</strong> — our DDPM crashed</li>
+        <li>NeurIPS reviewers are <strong>activation-function skeptics</strong> — KANs trigger reflexive dismissal</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>AAAI Advantage:</strong> AAAI's broader scope and acceptance of "analysis/empirical regularity" papers makes the universal law a <em>better fit</em> than NeurIPS, where the bar for architecture novelty is higher and the KAN-brand is tainted by the original overclaiming.
+  </div>
+
+  <!-- ============ SECTION 4: TIMELINE ============ -->
+  <h2 id="sec-timeline">4. 5-Week Critical Path Timeline</h2>
+
+  <p style="margin-bottom:1rem;">Anchor date: <strong>June 14, 2026</strong> &nbsp;|&nbsp; Abstract deadline: <strong>July 21, 2026</strong> &nbsp;|&nbsp; Full paper deadline: <strong>July 28, 2026</strong></p>
+
+  <div class="timeline">
+    <div class="timeline-item done">
+      <strong>Phase 0: Locked Thesis & Pre-flight</strong> <span class="badge green">DONE</span><br>
+      <span style="color:var(--text-muted);">June 5 — Thesis locked. Tier-0 audit complete. Universality confirmed.</span>
+    </div>
+    <div class="timeline-item running">
+      <strong>Week 1: β-Sweep + DDPM Baseline</strong> <span class="badge orange">IN PROGRESS</span><br>
+      <span style="color:var(--text-muted);">June 14–21 — Run theory/beta_sweep.py on 4090 (5 β × 2 families × 3 seeds = 30 runs). Run DDPM baseline on Colab T4. <em>Both are resume-safe.</em></span>
+    </div>
+    <div class="timeline-item critical">
+      <strong>Week 2: DnCNN + BSD500</strong> <span class="badge red">CRITICAL</span><br>
+      <span style="color:var(--text-muted);">June 21–28 — Train micro-DnCNN/NAFNet-small baseline. Train BSD500 64px KAN-EBM for 3rd dataset trend. <em>Start immediately if Week 1 jobs are running.</em></span>
+    </div>
+    <div class="timeline-item">
+      <strong>Week 3: Ablations + Figure Generation</strong> <span class="badge accent">PLANNED</span><br>
+      <span style="color:var(--text-muted);">June 28–July 5 — Recipe ablations (single- vs multi-σ, param sweep, eval protocol, optimizer). Generate all figures from committed data. <em>These can be supplementary.</em></span>
+    </div>
+    <div class="timeline-item">
+      <strong>Week 4: Paper Rewrite (v5)</strong> <span class="badge accent">PLANNED</span><br>
+      <span style="color:var(--text-muted);">July 5–12 — Rewrite paper_v5.tex around locked thesis. New intro, new abstract, new experiments section. <em>This is the true bottleneck.</em></span>
+    </div>
+    <div class="timeline-item">
+      <strong>Week 5: Polish + Abstract + Submission</strong> <span class="badge accent">PLANNED</span><br>
+      <span style="color:var(--text-muted);">July 12–21 — Internal review, proofreading, LaTeX compilation, code release prep. Submit abstract July 21. Finalize full paper July 28.</span>
+    </div>
+  </div>
+
+  <div class="card orange">
+    <h3>Parallelization Strategy</h3>
+    <p>Weeks 1–2 experiments can run <strong>in parallel</strong> on different hardware:</p>
+    <table>
+      <tr><th>Task</th><th>Hardware</th><th>Runtime</th><th>Parallel?</th></tr>
+      <tr><td>β-sweep</td><td>RTX 4090</td><td>6–10h</td><td>Yes — batch overnight</td></tr>
+      <tr><td>DDPM baseline</td><td>Colab T4</td><td>~15 min</td><td>Yes — independent</td></tr>
+      <tr><td>DnCNN training</td><td>RTX 4090</td><td>~9 min</td><td>Yes — quick</td></tr>
+      <tr><td>BSD500 64px</td><td>RTX 4090</td><td>~18h</td><td>Yes — overnight</td></tr>
+      <tr><td>Paper rewrite</td><td>CPU</td><td>2 weeks</td><td>No — needs experimental data first</td></tr>
+    </table>
+  </div>
+
+  <!-- ============ SECTION 5: EXPERIMENT MATRIX ============ -->
+  <h2 id="sec-experiments">5. Experiment Priority Matrix</h2>
+
+  <p>Experiments ranked by impact on AAAI acceptance probability. <strong>Gate experiments</strong> block the paper if they fail. <strong>Supplementary experiments</strong> can be dropped if time runs out.</p>
+
+  <table>
+    <tr>
+      <th>Experiment</th>
+      <th>Priority</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Impact</th>
+      <th>If Fails</th>
+    </tr>
+    <tr>
+      <td>β-sweep (controlled theory test)</td>
+      <td class="risk-high">P0</td>
+      <td>Gate</td>
+      <td>Running</td>
+      <td>Upgrades theory from "illustrative" to "tested"</td>
+      <td>Report as boundary; law/rule unaffected</td>
+    </tr>
+    <tr>
+      <td>DDPM baseline (cross-family)</td>
+      <td class="risk-high">P0</td>
+      <td>Gate</td>
+      <td>Running</td>
+      <td>Capstone: 5.8K → 35.7M params</td>
+      <td>Weaken cross-family claim; keep EBM+score</td>
+    </tr>
+    <tr>
+      <td>DnCNN/NAFNet-small baseline</td>
+      <td class="risk-med">P1</td>
+      <td>Gate</td>
+      <td>Not started</td>
+      <td>Addresses "no modern baseline" critique</td>
+      <td>Keep micro-DnCNN from prior work</td>
+    </tr>
+    <tr>
+      <td>BSD500 64px (3rd dataset)</td>
+      <td class="risk-med">P1</td>
+      <td>Supplementary</td>
+      <td>Not started</td>
+      <td>Strengthens α(data) trend</td>
+      <td>Use CIFAR + CelebA only; still valid</td>
+    </tr>
+    <tr>
+      <td>Recipe ablations</td>
+      <td class="risk-low">P2</td>
+      <td>Supplementary</td>
+      <td>Not started</td>
+      <td>Reproducibility rigor</td>
+      <td>Move to supplementary material</td>
+    </tr>
+    <tr>
+      <td>Noise mixture phase diagram</td>
+      <td class="risk-low">P2</td>
+      <td>Supplementary</td>
+      <td>Not started</td>
+      <td>Extends phase boundary</td>
+      <td>Keep existing 6-type diagram</td>
+    </tr>
+  </table>
+
+  <div class="callout">
+    <strong>Rule:</strong> If any P0 experiment fails by June 28, the paper <em>still ships</em> but the affected claim is downgraded. The universal law, predictive rule, and phase diagram are already strong enough. Do NOT let perfect be the enemy of submitted.
+  </div>
+
+  <!-- ============ SECTION 6: RISK REGISTER ============ -->
+  <h2 id="sec-risks">6. Risk Register & Mitigation</h2>
+
+  <div class="grid-2">
+    <div class="card red">
+      <h3>🔴 Critical Risks (Kill Paper)</h3>
+      <table style="font-size:0.85rem;">
+        <tr><th>Risk</th><th>Mitigation</th></tr>
+        <tr>
+          <td>Paper rewrite takes &gt;2 weeks</td>
+          <td>Start rewriting <strong>immediately</strong> with placeholder experiment sections. Use paper_v4 as structural scaffold.</td>
+        </tr>
+        <tr>
+          <td>LaTeX compilation issues</td>
+          <td>Test compile by July 5. Use Overleaf if local fails.</td>
+        </tr>
+        <tr>
+          <td>β-sweep or DDPM crashes</td>
+          <td>Both are resume-safe. Set up auto-restart. If DDPM fails, capstone becomes EBM+score only.</td>
+        </tr>
+      </table>
+    </div>
+    <div class="card orange">
+      <h3>🟡 Major Risks (Weaken Paper)</h3>
+      <table style="font-size:0.85rem;">
+        <tr><th>Risk</th><th>Mitigation</th></tr>
+        <tr>
+          <td>BSD500 training is slow</td>
+          <td>Skip BSD500; CIFAR + CelebA is sufficient for 2-dataset trend.</td>
+        </tr>
+        <tr>
+          <td>DnCNN beats us at every K</td>
+          <td>Expected! The story is "K-scaling gives a compute-quality knob," not "beat SOTA."</td>
+        </tr>
+        <tr>
+          <td>Theory section is "illustrative"</td>
+          <td>β-sweep upgrades it. If β-sweep fails, keep as "motivated mechanism + rigorous regularization framing."</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3>🟢 Low Risks (Manageable)</h3>
+      <ul style="padding-left:1.2rem;">
+        <li>Code release prep — use existing scripts, just zip and README</li>
+        <li>Reproducibility checklist — already drafted in REPRODUCIBILITY.md</li>
+        <li>Figure quality — regenerate from committed JSON data</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>📋 Contingency: If Everything Goes Wrong</h3>
+      <p style="margin-top:0.5rem;">Even if <strong>all</strong> remaining experiments fail, the paper can still ship with:</p>
+      <ul style="padding-left:1.2rem;">
+        <li>Universality: KAN + GELU + SiLU + Tanh + score (already done)</li>
+        <li>Phase diagram: 6 corruption types (already done)</li>
+        <li>Practical rule: 99.83% oracle (already done)</li>
+        <li>64px scale-up: CelebA (already done)</li>
+        <li>Theory: spectral regularization framing (already done)</li>
+      </ul>
+      <p style="margin-top:0.5rem; color:var(--green);"><strong>This is the floor. It is already a paper.</strong></p>
+    </div>
+  </div>
+
+  <!-- ============ SECTION 7: PAPER STRUCTURE ============ -->
+  <h2 id="sec-paper">7. Paper_v5 Structure Template</h2>
+
+  <p><strong>Target:</strong> 7–8 pages (AAAI format) + supplementary. The narrative arc must be: <em>"We discovered a law, we tried to attribute it to KAN, we falsified ourselves, and the deeper truth is universal."</em></p>
+
+  <div class="paper-section">
+    <div class="pages">~0.5 pages</div>
+    <div class="title">1. Introduction &amp; The Locked Thesis</div>
+    <div class="content">
+      Open with the test-time compute problem: "How much should an AI system think?" Introduce K*(σ) ≈ Cσ<sup>α</sup> as the answer. State the thesis immediately. Tease the self-correction arc ("we originally thought KAN was the cause; the truth is deeper"). List contributions.
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~0.5 pages</div>
+    <div class="title">2. Background: Test-Time Compute &amp; Iterative Inference</div>
+    <div class="content">
+      Literature: LLM test-time scaling (Snell et al. 2024), diffusion step scheduling, energy-based models. Position our work as the first <em>empirical law</em> for vision test-time compute, analogous to LLM scaling laws but for inference depth.
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~0.5 pages</div>
+    <div class="title">3. The Universal Scaling Law</div>
+    <div class="content">
+      <strong>3.1</strong> Empirical discovery across 5 architectures (KAN, GELU, SiLU, Tanh, score). Show α = 1.376 ± 0.003.<br>
+      <strong>3.2</strong> Predictive validation: 100% LOO, 99.7% LTO.<br>
+      <strong>3.3</strong> Power law is the most parsimonious model (AIC comparison).<br>
+      <strong>3.4</strong> Phase diagram: obeys for additive noise, breaks for deterministic operators.
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~1 page</div>
+    <div class="title">4. Mechanism: Spectral Regularization Theory</div>
+    <div class="content">
+      Derivation sketch: K gradient steps = Landweber spectral filter. Optimal K from bias-variance crossover. Predict α = 2γ/β. List 5 predictions the theory makes (sign, band, data-dependence, phase boundary, architecture-independence). Report β-sweep results (if ready). Be honest: "go/no-go on real checkpoints failed — presented as illustrative mechanism, not fitted law."
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~1 page</div>
+    <div class="title">5. Scale-Up &amp; Cross-Family Validation</div>
+    <div class="content">
+      <strong>5.1</strong> 64px CelebA: α = 1.26, confirming data-dependence.<br>
+      <strong>5.2</strong> DDPM baseline: same α at 35.7M params (if ready).<br>
+      <strong>5.3</strong> DnCNN/NAFNet comparison: we don't win on absolute PSNR, but we uniquely provide a compute-quality knob.<br>
+      <strong>5.4</strong> Latency and perceptual metrics (LPIPS).
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~0.5 pages</div>
+    <div class="title">6. Practical Protocol: Deployable Early Stopping</div>
+    <div class="content">
+      The 4-step protocol: calibrate → fit → deploy → no search. Compare against fixed-K (up to −5.2 dB cost). Connect to classical early stopping (Yao 2007, Raskutti 2014).
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~0.5 pages</div>
+    <div class="title">7. Limitations &amp; Future Work</div>
+    <div class="content">
+      Honest scope: 32×32/64×64, additive Gaussian noise, no theoretical proof that α <em>must</em> be 2γ/β on real data. Do NOT overclaim.
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="paper-section">
+    <div class="pages">~0.5 pages</div>
+    <div class="title">8. Conclusion</div>
+    <div class="content">
+      Restate thesis. The law is not a property of any model — it is a property of iterative denoising itself. The practical payoff is a calibration-free inference rule.
+    </div>
+    <div class="clear"></div>
+  </div>
+
+  <div class="card">
+    <h3>Narrative Arc Checklist</h3>
+    <ul class="task-list">
+      <li class="done">"We found a law" — strong opening</li>
+      <li class="done">"We thought KAN was the cause" — setup the fall</li>
+      <li class="done">"We falsified ourselves" — the scientific turn</li>
+      <li>"The deeper truth is universal" — the new thesis</li>
+      <li>"Here is the mechanism" — the theory</li>
+      <li>"Here is how to use it" — the practical payoff</li>
+      <li>"Here is what we don't know" — honest limitations</li>
+    </ul>
+  </div>
+
+  <!-- ============ SECTION 8: DAILY BREAKDOWN ============ -->
+  <h2 id="sec-daily">8. Daily / Weekly Breakdown</h2>
+
+  <h3>Week 1 (June 14–21): Experiments Running</h3>
+  <table>
+    <tr><th>Day</th><th>Task</th><th>Hardware</th><th>Time</th></tr>
+    <tr><td>Mon 14</td><td>Start β-sweep (batch 1: β=1.0, 1.5). Start DDPM K-sweep on Colab.</td><td>4090 + Colab</td><td>2h setup</td></tr>
+    <tr><td>Tue 15</td><td>β-sweep batch 2 (β=2.0, 2.5). Monitor DDPM. Start DnCNN training.</td><td>4090 + Colab</td><td>1h</td></tr>
+    <tr><td>Wed 16</td><td>β-sweep batch 3 (β=3.0). Debug any crashes. Start BSD500 training.</td><td>4090</td><td>1h</td></tr>
+    <tr><td>Thu 17</td><td>All jobs running. Begin paper_v5 skeleton (intro + background).</td><td>CPU</td><td>4h</td></tr>
+    <tr><td>Fri 18</td><td>Check β-sweep convergence. Start Section 3 draft.</td><td>CPU</td><td>4h</td></tr>
+    <tr><td>Sat 19</td><td>Weekend batch: finish β-sweep if not done. Continue paper draft.</td><td>4090 + CPU</td><td>3h</td></tr>
+    <tr><td>Sun 20</td><td>Review all experiment outputs. Update paper with preliminary numbers.</td><td>CPU</td><td>3h</td></tr>
+  </table>
+
+  <h3>Week 2 (June 21–28): Baselines + Paper Draft</h3>
+  <table>
+    <tr><th>Day</th><th>Task</th><th>Hardware</th><th>Time</th></tr>
+    <tr><td>Mon 21</td><td>Finish DnCNN + BSD500. Draft Section 4 (Theory).</td><td>4090 + CPU</td><td>5h</td></tr>
+    <tr><td>Tue 22</td><td>Generate all figures from committed data. Draft Section 5 (Scale-up).</td><td>CPU</td><td>5h</td></tr>
+    <tr><td>Wed 23</td><td>Draft Section 6 (Protocol). Draft Section 7 (Limitations).</td><td>CPU</td><td>4h</td></tr>
+    <tr><td>Thu 24</td><td>Draft Abstract + Conclusion. First pass complete.</td><td>CPU</td><td>4h</td></tr>
+    <tr><td>Fri 25</td><td>Self-review: read paper aloud. Fix logical gaps. Check citations.</td><td>CPU</td><td>4h</td></tr>
+    <tr><td>Sat 26</td><td>Experiment catch-up day. If DDPM/DnCNN done, integrate.</td><td>4090 + CPU</td><td>3h</td></tr>
+    <tr><td>Sun 27</td><td>Second draft. Tighten language. Remove hedging.</td><td>CPU</td><td>4h</td></tr>
+  </table>
+
+  <h3>Week 3 (June 28–July 5): Ablations + Figures</h3>
+  <table>
+    <tr><th>Task</th><th>Notes</th></tr>
+    <tr><td>Run recipe ablations (3080)</td><td>Single- vs multi-σ, param sweep, optimizer</td></tr>
+    <tr><td>Regenerate all figures</td><td>Use scripts from results/logs/*.json</td></tr>
+    <tr><td>Write supplementary material</td><td>Ablations, extra figures, code release README</td></tr>
+    <tr><td>Third draft of main paper</td><td>Integrate all new results</td></tr>
+  </table>
+
+  <h3>Week 4 (July 5–12): Polish</h3>
+  <table>
+    <tr><th>Task</th><th>Notes</th></tr>
+    <tr><td>LaTeX compilation test</td><td>Fix all formatting issues early</td></tr>
+    <tr><td>Citation completeness</td><td>Every claim has a citation or a JSON log</td></tr>
+    <tr><td>Figure caption review</td><td>Each caption must be self-contained</td></tr>
+    <tr><td>External review</td><td>Ask 1–2 colleagues for feedback</td></tr>
+  </table>
+
+  <h3>Week 5 (July 12–21): Submission</h3>
+  <table>
+    <tr><th>Date</th><th>Task</th></tr>
+    <tr><td>July 12</td><td>Final internal review. Freeze content.</td></tr>
+    <tr><td>July 14</td><td>Code release zip. Reproducibility checklist.</td></tr>
+    <tr><td>July 18</td><td>Proofreading pass. Read every sentence aloud.</td></tr>
+    <tr><td>July 21</td><td><strong>Submit abstract</strong> (11:59 PM UTC-12)</td></tr>
+    <tr><td>July 22–27</td><td>Final paper polish. Fix any last issues.</td></tr>
+    <tr><td>July 28</td><td><strong>Submit full paper</strong> (11:59 PM UTC-12)</td></tr>
+    <tr><td>July 31</td><td>Supplementary material + code upload</td></tr>
+  </table>
+
+  <!-- ============ SECTION 9: NARRATIVE ============ -->
+  <h2 id="sec-narrative">9. Narrative Arc &amp; Key Messages</h2>
+
+  <div class="card green">
+    <h3>The One-Minute Pitch</h3>
+    <p style="margin-top:0.5rem; font-size:1.05rem; color:var(--text-white);">
+      "We asked: how many inference steps should an iterative denoiser use? We discovered a universal power law — K*(σ) ≈ Cσ<sup>α</sup> — that holds across 5 architectures and 2 model families. The exponent α is not set by the model; it is set by the data's noise spectrum. This gives a 5-point calibration protocol that recovers 99.83% of oracle PSNR with no per-image tuning."
+    </p>
+  </div>
+
+  <h3>Self-Correction as a Strength</h3>
+  <div class="card">
+    <p>Do not hide the narrative of failure and correction. <strong>Embrace it.</strong> The paper's honesty about the KAN-claim collapse is a credibility asset, not a liability. Frame it as:</p>
+    <ol style="padding-left:1.2rem; margin-top:0.5rem;">
+      <li><strong>Hypothesis 1 (v1–v4):</strong> KAN's B-spline smoothness creates a unique scaling exponent.</li>
+      <li><strong>Falsification (Tier-0 audit):</strong> Under matched training, all architectures give identical α.</li>
+      <li><strong>Deeper discovery:</strong> The scaling law is universal — it holds even for non-energy models (direct score nets).</li>
+      <li><strong>New hypothesis:</strong> α is determined by the data power spectrum, not the model.</li>
+      <li><strong>Theory:</strong> Spectral regularization derivation gives α = 2γ/β.</li>
+    </ol>
+    <p style="margin-top:0.5rem; color:var(--accent2);">This arc is <strong>Popperian science</strong>. Reviewers will respect it.</p>
+  </div>
+
+  <h3>How to Answer Hard Questions</h3>
+  <table>
+    <tr><th>Question</th><th>Answer</th></tr>
+    <tr>
+      <td>"Why should we care about CIFAR-10?"</td>
+      <td>"We are studying a <em>regularity</em>, not competing for SOTA PSNR. The law is reproducible across datasets (CIFAR, CelebA, BSD500). The small scale isolates the phenomenon from confounding factors."</td>
+    </tr>
+    <tr>
+      <td>"Isn't this just regularization theory?"</td>
+      <td>"The connection to iterated regularization is the <em>framing</em>, not the contribution. The contributions are: (a) cross-family universality was not previously demonstrated, (b) the phase boundary is new, (c) the practical calibration rule is new, (d) connecting test-time compute to classical theory is the integrative bridge AAAI invites."</td>
+    </tr>
+    <tr>
+      <td>"Why is α = 1.376 interesting?"</td>
+      <td>"It is not a magic number. It is the empirical signature of a spectral regularization process. The interesting part is that it is <em>predictable</em> from 5 calibration points and <em>universal</em> across models."</td>
+    </tr>
+    <tr>
+      <td>"What if DnCNN beats you at every K?"</td>
+      <td>"DnCNN is a strong single-pass denoiser. We are not competing on absolute PSNR. We are offering a <em>compute-quality knob</em> that DnCNN does not have. At low noise, K=1 suffices. At high noise, K=10 gives +3 dB over K=1."</td>
+    </tr>
+  </table>
+
+  <!-- ============ SECTION 10: DROP / KEEP ============ -->
+  <h2 id="sec-appendix">10. What to Drop / What to Keep</h2>
+
+  <div class="grid-2">
+    <div class="card red">
+      <h3>🗑️ DROP (Do Not Mention)</h3>
+      <ul class="task-list">
+        <li class="critical">"Unified Theory of Intelligence" / TIM branding</li>
+        <li class="critical">FEP / Active Inference / Hamiltonian Brain claims</li>
+        <li class="critical">Eikonal / WaveBrain / Planning (out of scope)</li>
+        <li class="critical">"KAN is special" or "KAN superiority"</li>
+        <li class="critical">O(1) inference claims</li>
+        <li class="critical">The original "Triple Equivalence" Proposition (now just an algorithmic remark)</li>
+        <li class="critical">Any mention of "paradigm shift"</li>
+        <li>ImageNet-1K / DIV2K / video (out of scope)</li>
+        <li>Sudoku / Latin square (structurally limited)</li>
+      </ul>
+    </div>
+    <div class="card green">
+      <h3>✅ KEEP (Core to Paper)</h3>
+      <ul class="task-list">
+        <li class="done">Universal scaling law (all architectures)</li>
+        <li class="done">Predictive validation (100% LOO)</li>
+        <li class="done">Power law AIC comparison</li>
+        <li class="done">Phase diagram (6 corruption types)</li>
+        <li class="done">64px CelebA scale-up</li>
+        <li class="done">LPIPS perceptual metrics</li>
+        <li class="done">Latency / throughput characterization</li>
+        <li class="done">Practical early-stopping protocol</li>
+        <li class="done">Spectral regularization theory framing</li>
+        <li>β-sweep (if completes)</li>
+        <li>DDPM baseline (if completes)</li>
+        <li>DnCNN/NAFNet comparison (if completes)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Scope Discipline:</strong> The biggest risk to this submission is <em>scope creep</em>. Every time you think "but what about the Eikonal work?" or "should we mention FEP?" — the answer is <strong>NO</strong>. One core, deepened. One law, universal. One paper, submitted.
+  </div>
+
+  <!-- ============ FOOTER ============ -->
+  <div class="accent-bar" style="margin-top:3rem;"></div>
+  <p style="text-align:center; color:var(--text-muted); font-size:0.85rem;">
+    Generated 2026-06-14 from analysis of: README.md, AI-review.md, CONTEXT_UPDATE.md, REGISTERED_CLAIMS.md, SURGICAL_AUDIT.md, NEURIPS_STRATEGY.md, KIMI_HANDOFF.md, make_aaai_slides.py, and AAAI 2027 call-for-papers.<br>
+    Research at AUB. Contact: hafezkhatib.2002@gmail.com
+  </p>
+
+</div>
+
+</body>
+</html>

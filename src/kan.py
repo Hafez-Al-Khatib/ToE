@@ -110,7 +110,10 @@ class KANLinear(nn.Module):
 
         grid: torch.Tensor = self.grid
         x = x.unsqueeze(-1)
-        bases = ((x >= grid[:, :-1]) & (x < grid[:, 1:])).to(x.dtype)
+        # Smooth differentiable basis initialization replacing strict boolean masking (#5 Audit Fix)
+        # Allows PyTorch autograd to propagate knot-boundary shifts
+        temp = 100.0
+        bases = torch.sigmoid(temp * (x - grid[:, :-1])) * torch.sigmoid(temp * (grid[:, 1:] - x))
         for k in range(1, self.spline_order + 1):
             bases = (
                 (x - grid[:, : -(k + 1)])

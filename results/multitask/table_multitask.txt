@@ -1,0 +1,13 @@
+======================================================================
+MULTI-TASK RESTORATION RESULTS  (PSNR in dB, MNIST, sigma=0.20)
+======================================================================
+Task                    Corrupted      FFN KAN K= 1 KAN K= 5 KAN K=10 KAN K=20
+----------------------------------------------------------------------
+Denoising                   19.96    21.64      21.62      27.10      27.82      25.61
+Super-Resolution            14.13    18.23      14.89      15.42      15.68      15.67
+Inpainting                  11.93    19.71      12.23      13.40      15.04      18.60
+======================================================================
+
+Key Result: KAN-EBM uses ONE model for ALL tasks.
+FFN requires 3 separate models (each trained per task).
+For inpainting: FFN gains = anchoring gives KAN a structural advantage.

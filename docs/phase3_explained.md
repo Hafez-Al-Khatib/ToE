@@ -1,6 +1,6 @@
 # Phase 3: Wave Brain — Path Integral Reasoning
 
-This document explains the theoretical foundation of Phase 3: using wave physics to solve reasoning problems at O(1) depth instead of iterative search.
+This document explains the theoretical foundation of Phase 3: using wave physics to solve reasoning problems with parallel wave propagation instead of sequential search.
 
 ---
 
@@ -38,7 +38,7 @@ Light doesn't "search" for the shortest path. It **propagates as a wave**:
 
 > **The optimal path emerges from the physics — no search required.**
 
-This is O(1) reasoning depth: solve the wave equation once, read off the answer.
+This solves reasoning with parallel wave propagation: solve the wave equation once, read off the answer.
 
 ### Physical Analogy
 
@@ -337,7 +337,7 @@ Phase 3 replaces explicit search with implicit wave physics:
 |--------|-------------------|------------|
 | Exploration | Sequential | Parallel (all paths at once) |
 | Complexity | O(V + E) | O(solve Eikonal) ≈ O(N·sweeps) |
-| Reasoning depth | Proportional to path length | O(1) forward passes |
+| Reasoning depth | Proportional to path length | O(N) with parallelism |
 | Parallelism | Limited | Highly parallel (GPU) |
 
 The key insight:

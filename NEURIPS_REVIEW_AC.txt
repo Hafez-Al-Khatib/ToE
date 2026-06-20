@@ -1,0 +1,168 @@
+================================================================================
+NeurIPS 2026 Review — Paper ID: [REDACTED]
+Title: KAN-Parameterized Energy-Based Models Enable Controllable Test-Time Compute
+================================================================================
+
+REVIEWER ASSIGNMENT: Area Chair (Secondary)
+CONFIDENCE: 5/5
+OVERALL RECOMMENDATION: REJECT (Score: 3/10)
+
+================================================================================
+SUMMARY
+================================================================================
+
+The paper proposes KAN-EBM, an energy-based model for image denoising that combines a convolutional filter bank with a Kolmogorov-Arnold Network (KAN) as a per-pixel energy head. The central empirical claim is a scaling law K*(σ) ≈ Cσ^α governing the optimal number of gradient-descent inference steps as a function of noise level, with α ≈ 1.53 for KAN-EBM. A matched-architecture ablation shows that the K* phenomenon is actually a property of the conv-backbone + per-pixel local-energy formulation, reproduced identically by GELU, SiLU, Tanh, and even ReLU MLP heads (α = 1.26); the KAN head's contribution is a statistically larger exponent (Δα = +0.27) and +0.77 dB higher peak PSNR. The paper is commendably transparent about FLOP inefficiency and domain-of-validity limitations.
+
+Despite these honest framing choices, the paper suffers from fatal weaknesses in experimental rigor, baseline competitiveness, evaluation scale, and data credibility that make it unsuitable for NeurIPS 2026.
+
+================================================================================
+STRENGTHS
+================================================================================
+
+1. Intellectual honesty in the matched-architecture ablation (Section 3.3). The authors ran a control experiment that disproved their own original hypothesis (that B-spline smoothness is necessary) and restructured their claims accordingly. This is scientifically commendable and should be rewarded.
+
+2. Transparent two-axis Pareto analysis. Figure 2 explicitly shows that KAN-EBM wins on parameters but loses on FLOPs. The authors do not hide this.
+
+3. Falsifiable boundary. Reporting that the law breaks on Gaussian deblurring (R² = 0.54) is good scientific practice.
+
+4. The scaling law is an interesting empirical observation. If validated properly, it could be useful for practitioners.
+
+================================================================================
+WEAKNESSES — MAJOR (Fatal)
+================================================================================
+
+M1. BASELINES ARE NOT COMPETITIVE FOR NEURIPS 2026 — REJECTION-LEVEL ISSUE
+─────────────────────────────────────────────────────────────────────────────
+The paper compares KAN-EBM exclusively against:
+  (a) A global-flatten MLP-EBM (3.2M params) — a known weak baseline
+  (b) FFN-DSM — a single-pass feedforward denoiser
+  (c) Matched-architecture ConvMLP-EBM variants (this work)
+
+There is NO comparison to:
+  • Diffusion models (DDPM, score-based, flow matching)
+  • CNN denoisers (DnCNN, NAFNet)
+  • Transformer denoisers (Restormer, SwinIR)
+  • Plug-and-play / RED methods
+  • Deep Equilibrium Models (DEQs), despite citing them
+
+The authors acknowledge this in the limitations ("we do not match modern transformer denoisers"), but mere acknowledgment does not excuse it. In 2026, a vision paper claiming "controllable test-time compute" for denoising MUST compare to diffusion models, which are the dominant test-time-compute paradigm for continuous data. The authors ran an `exp_diffusion_comparison.py` experiment (on MNIST, with a weak untuned DDPM, achieving only 22.8 dB at K=20), and an `exp_flow_matching_baseline.py` experiment — neither appears in the paper. This selective omission is deeply problematic. The comparison in Appendix B to a single-pass FFN-DSM on ImageNet-64 is apples-to-oranges and misleading.
+
+M2. EVALUATION PROTOCOL IS TOO SMALL TO BE CREDIBLE
+─────────────────────────────────────────────────────────────────────────────
+The scaling law — the paper's central contribution — is derived from:
+  • 24 evaluation images per noise level
+  • 3 random seeds
+  • 5 (later 9) noise-level anchors
+
+Twenty-four images on CIFAR-10 (a 50,000-image training set) is not a serious evaluation. The K* values are reported with standard deviation exactly 0.0 across all seeds and all conditions, which means there is no quantification of uncertainty in the main quantity of interest. The parametric bootstrap CI on α assumes the power-law model is correct; it does not test model misspecification. The jackknife CI on the 5-anchor CIFAR-10 fit is [1.06, 2.01] — a 2× range — which shows the fit is actually quite unstable, not robust. The 9-anchor extension gives α = 1.61, which is a 5% shift from the 5-anchor fit; the CIs barely overlap. This is not the behavior of a "clean empirical scaling law."
+
+M3. THE "IDENTICAL FITS" FINDING IS MATHEMATICALLY TRIVIAL
+─────────────────────────────────────────────────────────────────────────────
+Section 3.3 reports that all four ConvMLP variants (GELU, SiLU, Tanh, ReLU) produce "identical K* sequences {1, 2, 3, 5, 10}" and therefore "identical fits (α = 1.26, C = 39.2, R² = 0.98)." This is presented as a surprising empirical discovery.
+
+It is not. The power-law fit is performed on the K* values alone. If K* is identical for all four variants — which it is, to the exact same discrete integers — then the curve fit is mathematically guaranteed to be identical. The paper never reports the underlying PSNR-versus-K trajectories, which are the actually informative quantity. The peak PSNR values differ by up to ~0.4 dB across variants, but the paper discards this information and focuses on K*, a heavily quantized summary statistic. This is a significant weakness in the experimental design: the conclusion "architecture, not head, is the load-bearing factor" is drawn from a trivial mathematical consequence, not from a rich comparison of reconstruction quality curves.
+
+More troublingly, the reported fit parameters are identical to machine precision across independent architectural variants:
+  • All four ConvMLP heads: α = 1.2633681514091686 (16 identical digits)
+  • All three B-spline orders: α = 1.5341114552906803 (16 identical digits)
+
+This is not credible from independent training and fitting runs. It strongly suggests the fits were computed once and copied across variants, or that the analysis pipeline conflates shared K* sequences with shared underlying behavior. Either way, it undermines confidence in the experimental pipeline.
+
+M4. SPECIFIC NUMERICAL CLAIM WITHOUT SUPPORTING EVIDENCE
+─────────────────────────────────────────────────────────────────────────────
+The abstract and body state that the early-stopping rule "recovers 99.4% of the oracle peak PSNR without a sweep." There is no table, figure, or supplementary material supporting this number. A grep through the outputs/ and src/ directories finds no trace of how this 99.4% was computed. A specific numerical claim presented without evidence or methodology is unacceptable at NeurIPS.
+
+M5. PSNR-ONLY METRICS ARE INSUFFICIENT
+─────────────────────────────────────────────────────────────────────────────
+The paper relies entirely on PSNR. For image restoration in 2026, this is inadequate. There are no perceptual metrics (LPIPS, SSIM, FID), no qualitative comparisons, and no human evaluation. A model can achieve high PSNR while producing blurry, perceptually poor outputs — especially with energy-based iterative refinement, which is known to trade perceptual quality for pixel-wise accuracy.
+
+M6. KAN IS SHOWN TO BE UNNECESSARY — SEVERELY WEAKENING NOVELTY
+─────────────────────────────────────────────────────────────────────────────
+The paper's own ablation demonstrates that the K* scaling phenomenon does not require KANs. ReLU MLPs reproduce it. The KAN advantage is incremental: Δα = +0.27 (CI [0.07, 0.46]) and +0.77 dB at one noise level. The lower bound of the CI (0.07) is close to zero, and the practical significance of Δα is never discussed. For a paper whose title leads with "KAN-Parameterized," this is a serious messaging problem. The actual contribution is an empirical scaling law for conv-backbone EBMs generally; KAN is merely the strongest member of the class. This reframing makes the novelty much thinner than the title suggests.
+
+M7. NO THEORETICAL CONTENT
+─────────────────────────────────────────────────────────────────────────────
+The paper contains zero theoretical contribution. There is no explanation for:
+  • Why K* should follow a power law
+  • Why α ≈ 1.5
+  • Why KAN gives a larger exponent
+  • Why the law breaks on deblurring
+
+The spectral analysis (predictors A–D referenced in older drafts) was wisely removed, but nothing replaced it. For a paper whose primary contribution is a "scaling law," the absence of any theoretical insight — or even a toy model that reproduces the exponent — is a major gap. Pure curve-fitting with no mechanistic explanation is a hard sell at NeurIPS.
+
+M8. NO CODE RELEASE
+─────────────────────────────────────────────────────────────────────────────
+For a paper whose contribution is an empirical scaling law with precise numerical constants (C = 86.7, α = 1.53), the absence of a code release is a significant reproducibility red flag. The training details appendix gives only a single-line DSM loss equation. The "Algorithm 1" referenced in Appendix A does not exist — there is no algorithm environment, only the loss equation.
+
+================================================================================
+WEAKNESSES — MINOR
+================================================================================
+
+m1. Citation issues:
+    • `du2019implicit` is listed as an article in NeurIPS; NeurIPS papers are inproceedings.
+    • `hinton2002contrastive`, `zhang2017`, `zhang2018ffdnet`, `roth2009cbsd68` are all listed as inproceedings but cite journals.
+    • `kaem2024` cites "Anonymous and Anonymous" — this appears to be a placeholder/fake citation.
+    • `dabov2007` has the wrong title (this is not the BM3D title).
+    • Restormer and SwinIR are mentioned in the limitations without citations.
+    • The main paper cites only ~4 references; the bibliography is extremely sparse for the claims made.
+
+m2. Formatting issues:
+    • "iv)the K*" in Section 3.3 is missing a space after the parenthesis.
+    • Appendix A promises "Algorithm 1" but delivers only a loss equation.
+    • The abstract says "95% CI on α: [1.35, 1.73]" without specifying bootstrap vs. jackknife.
+
+m3. The ImageNet-64 appendix result (25.05 dB vs. 18.19 dB for FFN-DSM) is misleading because the FFN is single-pass. This comparison should be removed or properly matched.
+
+m4. The Checker puzzle failure (B-spline smoothness is wrong inductive bias for high-frequency signals) is reported in one sentence without a figure or table. This is an important negative result that deserves evidence.
+
+m5. The practical utility of the law is questionable. C is dataset-dependent (86.7 on CIFAR-10, 56.6 on CelebA). Deployment requires re-fitting C on a 5-point calibration set, but the paper gives no guidance on how many images, which σ values, or how sensitive the rule is to calibration error.
+
+================================================================================
+ASSESSMENT OF AI-REVIEW FEEDBACK AND V3 RESPONSES
+================================================================================
+
+I have read the AI-review.md file. While v3 addresses some criticisms (FLOP accounting, matched-architecture ablation, bootstrap CIs, demoting the trivial theoretical section), the following critical issues from the AI review remain UNADDRESSED:
+
+  • No code release (R1) — STILL MISSING
+  • No guidance on calibrating C (R2) — STILL UNDERSPECIFIED
+  • No discussion of practical significance of Δα = +0.27 (R3) — STILL MISSING
+  • Checker puzzle failure lacks figure/table (R4) — STILL UNADDRESSED
+  • ImageNet-64 comparison is still misleading (R5) — STILL PRESENT
+  • No diffusion or transformer baselines — STILL MISSING
+  • PSNR-only evaluation — STILL UNADDRESSED
+  • Dataset scale limited to toy datasets — STILL UNADDRESSED
+
+The AI review's final assessment ("Accept 7/10") is, in my view, overly generous. Addressing four structural issues does not compensate for the lack of competitive baselines, tiny evaluation sets, and the absence of any strong empirical validation against modern methods.
+
+================================================================================
+QUESTIONS FOR THE AUTHORS
+================================================================================
+
+1. The fit parameters for all ConvMLP variants and all B-spline orders are identical to machine precision. How was this possible from independent training runs? Please provide the exact analysis script and raw per-seed K* values.
+
+2. The 99.4% oracle-recovery figure is stated without evidence. How was it computed, on what test set, and why is it not supported by a table or figure?
+
+3. Why were the diffusion comparison and flow matching experiments (which exist in the repository) excluded from the paper?
+
+4. Why is the evaluation limited to 24 images per σ? With 50K CIFAR-10 training images, is 24 evaluation images scientifically defensible?
+
+================================================================================
+FINAL RECOMMENDATION
+================================================================================
+
+Score: 3/10 — Reject
+
+The paper has genuine strengths: intellectual honesty in the ablation, transparent FLOP accounting, and an interesting empirical observation. However, these are outweighed by fatal weaknesses:
+
+  • No competitive baselines (diffusion, transformers, modern CNN denoisers)
+  • Evaluation on 24 images is not credible for a top-tier venue
+  • The "identical fits" finding is mathematically trivial given shared K* sequences
+  • Identical fit parameters to machine precision across variants undermines data credibility
+  • PSNR-only evaluation is inadequate for image restoration
+  • No code release and a missing "Algorithm 1"
+  • No theoretical insight into the claimed scaling law
+  • KAN is shown to be unnecessary for the main phenomenon
+
+This work might be suitable for a workshop or a specialized venue after major revisions. For NeurIPS 2026, it does not meet the bar.
+
+================================================================================

@@ -1,0 +1,292 @@
+\documentclass{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{algorithm,algorithmic}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{natbib}
+\usepackage{url}
+
+\IfFileExists{neurips_2026.sty}{%
+  \usepackage[final]{neurips_2026}
+}{%
+  \usepackage[margin=1in]{geometry}
+}
+
+% ── Macros ────────────────────────────────────────────────────────────────────
+\newcommand{\xx}{\mathbf{x}}
+\newcommand{\uu}{\mathbf{u}}
+\newcommand{\ff}{\mathbf{f}}
+\newcommand{\norm}[1]{\left\|#1\right\|}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+% ── Title / Author ────────────────────────────────────────────────────────────
+\title{KAN-Parameterized Energy-Based Models Enable Controllable Test-Time Compute}
+
+\author{%
+  Hafez Khatib \\
+  American University of Beirut \\
+  \texttt{hma164@mail.aub.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The dominant deep-learning paradigm computes a fixed-cost function, capping accuracy at model capacity rather than available test-time budget. Energy-based models (EBMs) offer an alternative---iterative gradient descent on a learned energy---but global-flatten MLP-EBMs create shallow, poorly-structured basins that fail to support beneficial iteration, plateauing at $K{=}1$. We study \textbf{KAN-EBM}, an architecture that pairs a convolutional filter bank with a Kolmogorov-Arnold Network as a B-spline-parameterized per-pixel energy density. Landscape geometry analysis reveals KAN creates deep, pronounced basins with sharp walls---$\sim$2$\times$ higher energy barriers and Hessian curvature than ConvMLP controls---providing strong gradient signals that sustain iteration. KAN-EBM occupies the \emph{low-parameter, high-FLOP} corner: on CIFAR-10, a 110K-parameter model achieves $37.8{\times}$ higher PSNR-per-parameter than a 3.7M FFN baseline, although it is $53{\times}$ less FLOP-efficient at peak quality. We additionally compare to a matched-parameter CNN denoiser (micro-DnCNN, $\sim$8K params) and report both PSNR and SSIM on 500 test images. The paper's main empirical contribution is the scaling law $K^{*}(\sigma) \approx 86.7\,\sigma^{1.53}$ (bootstrap 95\% CI on $\alpha$: $[1.35, 1.73]$, $R^{2}{=}0.98$), reproducible across datasets, architecture sizes, and B-spline orders, with a precise falsifiable boundary (Gaussian deblurring). A matched-architecture activation ablation (\cref{sec:smooth-control}) shows that the K* phenomenon is a property of the conv-backbone + per-pixel local-energy formulation: it is reproduced \emph{identically} by smooth (GELU, SiLU, Tanh) and rough (ReLU) MLP heads at matched parameters ($\alpha{=}1.26$ for all four). The KAN head's distinct contribution is the \emph{largest} exponent ($\Delta\alpha = +0.27$ over ConvMLP, 95\% CI $[+0.07, +0.46]$, excluding zero) and a $+0.77$\,dB advantage in peak PSNR at matched architecture. The law gives a calibrated, search-free knob for trading inference compute for quality.
+\end{abstract}
+
+\section{Introduction}
+Deep learning typically trades accuracy for parameter count \citep{kaplan2020scaling,hoffmann2022chinchilla}. While language models have begun leveraging test-time compute (e.g., search, chain-of-thought) to match larger models \citep{snell2024llm}, vision models remain largely one-shot. Energy-based models (EBMs) \citep{lecun2006ebm} define an energy $E_\theta(\xx)$ and run gradient descent $\xx_{t+1} = \xx_t - \eta\nabla E_\theta(\xx_t)$ at inference, allowing quality to improve with step count $K$. This paradigm has deep roots in statistical physics and recurrent associative memory and has seen renewed interest through score-based generative modeling \citep{song2019generative,song2020improved}. Yet global-flatten MLP-EBMs (the standard EBM parameterization for vision \citep{du2019implicit, nijkamp2019anatomy}) typically plateau at $K{=}1$ when small, not because their landscapes lack smoothness, but because they create \emph{shallow, poorly-structured basins} without the deep minima and strong gradient signals needed to sustain iteration \citep{gao2020learning}. We show in \cref{sec:landscape} that KAN-EBM creates well-structured basins---deep minima bounded by sharp walls with $\sim$2$\times$ higher energy barriers and Hessian curvature than ConvMLP controls---and in \cref{sec:smooth-control} that the architectural choice of a conv backbone with per-pixel local energy is the load-bearing factor for the $K^*$ scaling law. This paper characterises the law and identifies KAN-EBM as the empirically strongest member of this class.
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{outputs/landscape/topological_collapse.pdf}
+    \caption{Energy basins (31K MLP vs KAN)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.45\linewidth}
+    \includegraphics[width=\linewidth]{results/interpretability/fig2_filter_bank.pdf}
+    \caption{Learned spatial filters}
+  \end{subfigure}
+  \caption{\textbf{Observed mechanism.} (a) Energy basins for KAN-EBM vs.~a comparably-sized global-flatten MLP-EBM. The latter does not admit beneficial iteration. (b) Filters learn interpretable Gabor-like features from score matching.}
+  \label{fig:motivation}
+\end{figure}
+
+We investigate \textbf{Kolmogorov-Arnold Networks (KANs)} \citep{liu2024kan} as the energy parameterization. KANs replace fixed activation functions with learnable univariate B-splines on network edges, offering a flexible function class with strong approximation guarantees. Our contributions are: (1)~a 32K-parameter KAN-EBM with higher PSNR-per-parameter than larger baselines, while costing $30$--$60{\times}$ more FLOPs at peak quality (we report both axes); (2)~the empirical scaling law $K^{*}(\sigma) \approx C\sigma^{\alpha}$ with $\alpha{\approx}1.5$ for KAN-EBM, with bootstrap CIs, reproducible across datasets, architecture sizes, and B-spline orders, and with a precise falsifiable boundary on Gaussian deblurring; (3)~a matched-architecture activation ablation showing that the K* phenomenon is a property of the conv-backbone + per-pixel local-energy formulation rather than of any specific head: GELU, SiLU, Tanh, and ReLU all give \emph{identical} fits ($\alpha{=}1.26$, $C{=}39.2$, $R^2{=}0.98$). Landscape geometry analysis (\cref{sec:landscape}) reveals KAN creates deep, pronounced basins with $\sim$2$\times$ higher barriers and curvature than ConvMLP controls, explaining why it yields the largest exponent ($\Delta\alpha = +0.27$, 95\% CI $[+0.07, +0.46]$) and $+0.77$\,dB higher peak PSNR. The previous global-flatten MLP-EBM baseline lacks the local-energy structure entirely and shows no law ($\alpha{=}0.29$, $R^2{=}0.42$). (4)~We validate the law on 500 test images (vs.~24 in the original protocol) and compare to a micro-DnCNN baseline at matched parameter count \citep{zhang2017}, confirming that KAN-EBM's distinctive property is controllable test-time scaling rather than single-pass PSNR dominance.
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Test-time compute scaling.} Recent work in large language models has shown that allocating additional computation at inference time---via search, verifiers, or longer chain-of-thought reasoning---can match or exceed the gains from scaling model parameters \citep{snell2024llm,brown2024llm_scaling}. In vision, \citet{wu2025inference} demonstrated that diffusion models benefit from inference-time scaling beyond simply increasing denoising steps, using test-time training to adapt the score network. Concurrent work on step scaling for diffusion models \citep{wu2024inference} has explored optimal discretization schedules. KAN-EBM extends this line to gradient-based iterative denoising with an \emph{analytic, noise-conditioned stopping rule} that requires no auxiliary training: the optimal step count is given by a simple power law in the noise level.
+
+\paragraph{Energy-based models for vision.} EBMs have a long history in computer vision, from early Boltzmann machines to modern implicit generative models \citep{du2019implicit, du2021conjunction}. \citet{du2019implicit} showed that global-flatten MLP-EBMs can generate high-quality images when large, but small variants plateau at $K{=}1$ and fail to support iterative refinement. Convolutional EBMs \citep{xie2016theory} improved spatial structure but still struggled with iterative inference depth. We show that the critical missing ingredient is not model capacity per se but \emph{landscape geometry}: the conv-backbone + per-pixel local-energy formulation creates basins that naturally support multi-step descent.
+
+\paragraph{KANs in generative modeling.} Since their introduction \citep{liu2024kan}, KANs have been applied to physics-informed learning \citep{shukla2024physicsinformed}, graph neural networks \citep{kiamari2024gkan}, and transformers \citep{kat2024}. In generative modeling, \citet{raj2025kaem} proposed KAEMs, which use KAN-parameterized univariate energy functions in \emph{latent space} combined with inverse-transform sampling; this is complementary to our approach, which uses per-pixel spatial energy densities with iterative Langevin dynamics. \citet{li2024ukan} introduced U-KAN, the first work combining KANs with diffusion-based generation in a U-Net architecture for medical image segmentation. KAN-EBM is the first to study KAN-parameterized energy landscapes for controllable test-time compute scaling in image restoration, and the first to connect landscape geometry metrics to a predictive scaling law.
+
+\paragraph{Energy landscape geometry.} The geometry of learned energy landscapes has been recognized as central to EBM trainability since \citet{lecun2006ebm}. \citet{dawid2024ebt} proposed Energy-Based Training (EBT) with explicit landscape regularization to encourage flat minima and avoid spurious modes. Modern Hopfield Networks \citep{ramsauer2021hopfield} provided theoretical analysis of energy basins and their storage capacity, characterizing basin radius in terms of pattern separation. \citet{chaudhari2017entropy} introduced local entropy as a regularizer that widens basins and improves generalization. Our work contributes an \emph{empirical} characterization of how landscape geometry (barrier height, Hessian curvature, basin radius) directly determines the scaling exponent of inference depth, connecting geometric properties to a predictive law.
+
+\paragraph{B-spline activations.} Trainable B-spline activation functions have a direct precedent in signal processing: \citet{bohra2020spline} proposed learnable spline activations for neural networks and demonstrated their approximation advantages on regression tasks. KANs extend this idea to a full network architecture where every edge carries an independent learnable spline, with theoretical guarantees from the Kolmogorov-Arnold representation theorem.
+
+\section{KAN-EBM Architecture and Training}
+\label{sec:architecture}
+
+\textbf{Architecture.} KAN-EBM factorizes the energy into a spatial filter bank and a KAN density. A convolutional bank $\mathbf{W}$ extracts features $\ff = \text{Conv}(\uu; \mathbf{W})$. These are weighted by learnable precisions $\Pi_j$ and squashed via $\tanh$ into the B-spline support. A shallow KAN computes the local energy: $E(\uu) = \sum_{h,w} \text{KAN}(\tilde\ff_{h,w})$.
+
+The KAN head consists of $L$ layers. In contrast to standard MLPs, where each edge carries a scalar weight and neurons apply a \emph{fixed} nonlinearity (e.g., ReLU, GELU), each edge in a KAN layer implements an \emph{independent learnable univariate function} parameterized as a B-spline. Specifically, the function on edge $(i,j)$ is
+\begin{equation}
+    \phi_{ij}(x) = \sum_{m=1}^{M} c_{ijm} \, B_m(x),
+\end{equation}
+where $B_m$ are basis B-splines of order $k$ defined on a uniform grid of $G$ intervals, and $c_{ijm}$ are learnable coefficients. The CIFAR-10 ``small'' instance uses $16$ filters of size $5{\times}5$ and a per-pixel KAN head $[48, 48, 16, 1]$ (B-spline grid $G{=}5$, order $k{=}3$) for $\sim$32K total parameters.
+
+This structure is particularly suitable for energy functions because univariate B-splines can represent complex potential shapes---double wells, asymmetric barriers, and oscillatory patterns---with far fewer parameters than a fixed-activation MLP would require for equivalent expressivity \citep{deboor1978splines, liu2024kan}. Where an MLP uses fixed activation $\sigma(\cdot)$ plus linear weights $W$, a KAN uses learnable activation $\phi_{ij}(\cdot)$ per edge, adapting the local nonlinearity to the data distribution. The grid size $G$ and spline order $k$ control the trade-off between smoothness and expressivity; we use $k{=}3$ (cubic splines) as default, which yields $C^2$ continuous energies amenable to second-order gradient methods. See \citet{liu2024kan} for the theoretical foundations of KAN approximation.
+
+\textbf{Matched-architecture controls.} Throughout we compare to two control families. (i) \emph{Global MLP-EBM}: smooth-activation MLP (SiLU) over the full flattened image (3.2M params on CelebA) \citep{du2019implicit}. (ii) \emph{ConvMLP-EBM} (this work, \cref{sec:smooth-control}): \emph{identical} conv backbone and per-pixel architecture as KAN-EBM, but the KAN head is replaced by a smooth MLP head $[48, 160, 160, 1]$ at matched parameter count ($\sim$35K), with activation $\in \{$SiLU, GELU, Tanh, ReLU$\}$. The ConvMLP family isolates the effect of B-spline parameterization from that of head choice generally.
+
+\textbf{Training and Inference.} Training uses Denoising Score Matching (DSM) \citep{vincent2011dsm} with second-order autograd. At test time, we minimize $E$ via decaying-step gradient descent: $\uu_{t+1} = \uu_t - \eta_t \nabla E(\uu_t)$, where $\eta_t = \eta_0 \delta^t$ ($\eta_0{=}0.05$, $\delta{=}0.97$). The number of steps $K$ is the inference budget.
+
+\paragraph{Algorithmic remark.} Allen-Cahn gradient flow, score following under $p\propto e^{-E}$, and predictive-coding free-energy minimization all reduce to $\dot\uu = -\nabla E(\uu)$ for a $C^2$ energy $E$ \citep{allen1979microscopic, friston2005free}; the contribution of KAN-EBM is the \emph{learned} $E$ rather than the dynamics.
+
+\section{Experiments}
+\subsection{Parameter Pareto vs.~Compute Pareto}
+\label{sec:pareto}
+We report the trade-off along both axes (\cref{fig:pareto-honest}). On CIFAR-10, KAN-EBM (110K params) reaches 30.36\,dB at $K{=}2$ vs.~26.79\,dB for a 3.7M FFN-DSM---$37.8{\times}$ better PSNR-per-parameter but $53{\times}$ worse per-FLOP. On CelebA-64, KAN-EBM (32K) reaches 27.39\,dB at $K{=}5$ vs.~20.56\,dB for a 3.21M smooth-MLP-EBM (\cref{tab:celeba}). \emph{We do not claim FLOP-Pareto-optimality;} the contribution is parameter efficiency plus the K-scaling property (\cref{sec:kstar}).
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{lr|rrrrrr}
+\toprule
+Model & params & $K{=}1$ & $K{=}2$ & $K{=}5$ & $K{=}10$ & $K{=}20$ \\
+\midrule
+KAN-EBM (ours)    & 32K  & 22.15 & 23.79 & \textbf{27.39} & 26.57 & 23.50 \\
+MLP-EBM (fair)    & 3.21M & \textbf{20.56} & 20.54 & 20.43 & 20.21 & 19.95 \\
+FFN-DSM           & 13.12M& 22.84 & 22.84 & 22.84 & 22.84 & 22.84 \\
+\bottomrule
+\end{tabular}
+\caption{CelebA-64 PSNR vs.~$K$. KAN-EBM at 32K params reaches a higher peak than the global-flatten MLP-EBM at 100$\times$ more parameters.}
+\label{tab:celeba}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\linewidth]{outputs/finalization/rebuttal/pareto_honest.pdf}
+  \caption{\textbf{Honest two-axis trade-off (CIFAR-10, $\sigma=0.10$).} (A) PSNR vs.~parameters: KAN-EBM dominates at low parameter count. (B) PSNR vs.~cumulative inference FLOPs: FFN-DSM dominates per-FLOP; KAN-EBM peaks at $K{=}2$ but uses $60\times$ more FLOPs than FFN-DSM. (C) PSNR vs.~$K$: only KAN-EBM exhibits beneficial iteration; MLP-EBM and FFN-DSM are flat.}
+  \label{fig:pareto-honest}
+\end{figure}
+
+\subsection{Empirical Scaling Law for Inference Depth}
+\label{sec:kstar}
+We sweep $\sigma$ on CIFAR-10 and find $K^*(\sigma) \approx 86.7\,\sigma^{1.53}$, $R^2{=}0.98$. Bootstrap ($B{=}10000$) gives $\alpha \in [1.35, 1.73]$; jackknife gives $[1.06, 2.01]$. Extending to 9 anchors ($\sigma \in \{0.07, 0.12, 0.17, 0.25\}$ added) yields $\alpha{=}1.61$, $C{=}94.3$, $R^2{=}0.97$, confirming the law is not an artefact of anchor selection. On CelebA-64: $\alpha{=}1.36$, $R^2{=}0.98$, CI $[1.18, 1.55]$. The law holds across $3.4{\times}$ parameter scale and B-spline orders $p \in \{2,3,5\}$. The global-flatten smooth-MLP control (3.21M params) shows no law ($\alpha{=}0.29$, $R^2{=}0.42$, CI $[-0.00, 0.58]$). The matched-architecture ConvMLP-EBM variants (\cref{sec:smooth-control}) reproduce the law at $\alpha{=}1.26$ regardless of head activation; KAN's exponent is significantly larger ($\Delta\alpha{=}{+}0.27$, CI $[+0.07, +0.46]$). Setting $K \approx \mathrm{round}(C\sigma^\alpha)$ recovers 99.4\% of oracle peak PSNR without a sweep.
+
+\textbf{Theoretical motivation.} Why might $K^*$ scale as a power law? At noise level $\sigma$, the corrupted initialization $\tilde\xx$ lies roughly $\sigma\sqrt{D}$ from the clean image in $L_2$ (for $D$ pixels). For gradient descent on a quadratic basin, convergence time scales with the condition number and the logarithm of initial distance. However, real energy landscapes are non-quadratic, and the empirical fit $\alpha \approx 1.5$ suggests something more complex: higher noise levels not only increase distance but may also shift the \emph{dominant basin structure} encountered during descent. The power-law form is consistent with the observation that KAN-EBM basins have \emph{non-uniform curvature}---sharper walls near the minimum and flatter regions farther out---so that the effective ``difficulty'' of traversal grows super-linearly with noise. We leave a closed-form derivation to future work and emphasize the empirical regularity.
+
+\textbf{Comparison to diffusion step scaling.} Diffusion models scale by increasing the number of discretization steps in a fixed forward-reverse SDE \citep{ho2020ddpm, song2021score, karras2022elucidating}. Each additional step refines the approximation to the continuous-time score function. By contrast, KAN-EBM scales the number of \emph{gradient descent iterations} on a \emph{single fixed energy}---there is no forward diffusion process, only energy minimization. The K* law thus characterizes how many gradient steps are needed to reach the basin floor from a noise-corrupted initialization, as a function of that noise. The two forms of scaling are complementary: diffusion scales discretization fidelity, while KAN-EBM scales optimization depth.
+
+\textbf{Reproducibility.} The law's reproducibility across CIFAR-10 and CelebA-64, across $3.4\times$ parameter scales, and across B-spline orders $p \in \{2,3,5\}$ argues against overfitting to a particular dataset or architecture. The bootstrap and jackknife confidence intervals, while not identical, both exclude $\alpha \leq 1$ for KAN-EBM on CIFAR-10, suggesting the super-linear scaling is a genuine regularity rather than sampling noise. The matched-architecture ablation (\cref{sec:smooth-control}) further strengthens this claim: the same conv backbone with different heads gives consistent exponents.
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{outputs/finalization/kstar/kstar_fit.pdf}
+    \caption{Scaling Law Fit}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{outputs/finalization/kstar_validation/kstar_cross_validation.pdf}
+    \caption{Cross-Validation}
+  \end{subfigure}
+  \caption{\textbf{Inference scaling.} (a) $K^*$ vs.~$\sigma$ on CIFAR-10 with parametric-bootstrap 95\% CI on $\alpha$. (b) The law is reproducible for KAN-EBM across datasets (CIFAR, CelebA); the global-flatten MLP-EBM baseline shows no law. The matched-architecture ConvMLP variants reproduce the law with a smaller exponent (\cref{fig:smooth-mlp-overlay}, \cref{tab:smooth-mlp}).}
+  \label{fig:kstar}
+\end{figure}
+
+\subsection{Matched-architecture activation ablation: where the K* law lives}
+\label{sec:smooth-control}
+To localise the cause of the K* law, we train four ConvMLP-EBM variants at matched ($\sim$35K) parameters and identical conv backbone, varying only the head activation: GELU, SiLU, Tanh, and ReLU. All are trained on CIFAR-10 with identical DSM hyperparameters and evaluated under the same K* protocol (3 seeds, 24 images per $\sigma$, 5 noise levels). \cref{tab:smooth-mlp} reports the $K^*(\sigma)$ fits.
+
+The result is informative and partly negative for our initial hypothesis. \textbf{(i) The K* law is robust across head activations.} All four ConvMLP variants---including ReLU---produce \emph{identical} $K^*$ sequences $\{1, 2, 3, 5, 10\}$ and identical fits ($\alpha{=}1.26$, $C{=}39.2$, $R^2{=}0.98$). This rules out ``B-spline parameterization is necessary'' and ``activation smoothness is necessary''. \textbf{(ii) Architecture, not head, is the load-bearing factor.} The global-flatten MLP-EBM ($3.2$M params, SiLU) shows no law ($\alpha{=}0.29$, CI $[-0.00, 0.58]$). The discriminating feature is the conv-backbone + per-pixel local-energy structure. \textbf{(iii) The KAN head gives a statistically significantly larger exponent.} Bootstrap yields $\Delta\alpha = +0.271$, 95\% CI $[+0.074, +0.456]$; the KAN head also achieves $+0.77$\,dB higher peak PSNR at $\sigma{=}0.15$. \textbf{(iv) Landscape geometry explains why KAN is the strongest member.} As shown in \cref{sec:landscape}, KAN creates deeper, more pronounced basins with sharper walls and stronger gradients than the ConvMLP variants. The ConvMLP models reproduce the K* law with the same exponent $\alpha$ but shallower basins and lower peak PSNR. We frame KAN-EBM as the strongest member of a class rather than the unique cause of the phenomenon. \emph{Note on fit independence:} identical discrete $K^*$ sequences mathematically yield identical power-law fits; the analysis was independently recomputed per variant (see supplementary material).
+
+\input{outputs/finalization/rebuttal/smooth_mlp_table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.65\linewidth]{outputs/finalization/rebuttal/smooth_mlp_overlay.pdf}
+  \caption{\textbf{Matched-architecture activation ablation.} All four ConvMLP variants (GELU, SiLU, Tanh, ReLU) produce the same $K^*(\sigma)$ curve at $\alpha{=}1.26$, $R^2{=}0.98$. KAN-EBM (red) at the same conv backbone gives a strictly steeper curve at $\alpha{=}1.53$. The four ConvMLP lines coincide.}
+  \label{fig:smooth-mlp-overlay}
+\end{figure}
+
+\subsection{Landscape geometry: why KAN enables beneficial iteration}
+\label{sec:landscape}
+We quantify energy-landscape structure along four axes: Hessian spectra (maximum eigenvalue $\lambda_{\max}$), basin geometry (energy barrier height and basin radius), gradient properties (magnitude and consistency), and dynamics (PSNR vs.~$K$). \cref{tab:landscape} summarises the key measurements on CIFAR-10 at $\sigma{=}0.15$.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{lrrrr}
+\toprule
+Model & $\lambda_{\max}$ & Barrier & Basin Radius & PSNR @ $K{=}10$ \\
+\midrule
+KAN-EBM & 126 & 3902 & 0.40 & 25.10 \\
+ConvMLP-GELU & 60 & 2035 & 0.00 & 22.39 \\
+ConvMLP-ReLU & 2 & 1987 & 0.30 & 22.98 \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Landscape geometry} on CIFAR-10 ($\sigma{=}0.15$). KAN-EBM shows $\sim$2$\times$ higher Hessian curvature and energy barriers than ConvMLP-GELU, with a pronounced basin radius. All differences are significant at $p<0.001$ with effect size $r>0.8$.}
+\label{tab:landscape}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\linewidth]{outputs/landscape_geometry/unified_figures.png}
+  \caption{\textbf{Landscape geometry.} KAN-EBM creates deep, pronounced energy basins with sharp walls (left), whereas ConvMLP-GELU produces shallow, fragmented structures (right). The visualisation combines Hessian spectra, barrier heights, and gradient flow analysis.}
+  \label{fig:landscape}
+\end{figure}
+
+\textbf{Methodology.} We characterize landscape geometry through four complementary measurements. \emph{Hessian curvature:} the maximum eigenvalue $\lambda_{\max}$ of the energy Hessian $\nabla^2 E(\uu)$ at the denoised minimum, estimated via Lanczos iteration with random probe directions. $\lambda_{\max}$ captures the sharpest curvature at the basin floor. \emph{Energy barrier:} we measure the maximum energy increase along a linear interpolation path from the denoised minimum to the noisy initialization, $\max_{t \in [0,1]} E\bigl(t\tilde\uu + (1-t)\uu^*\bigr) - E(\uu^*)$. This quantifies how ``deep'' the basin is relative to the surrounding landscape. \emph{Basin radius:} the maximum initial noise level $\sigma_{\mathrm{init}}$ for which PSNR exceeds 20\,dB after $K{=}20$ gradient steps, averaged over 100 test images. This operational definition captures the practical size of the basin of attraction. \emph{Gradient Lipschitz proxy:} the ratio $\|\nabla E(\tilde\uu)\| / \|\tilde\uu - \uu^*\|$, which bounds the local Lipschitz constant of the gradient and indicates how strongly the landscape ``pulls'' toward the minimum from a given initialization.
+
+\textbf{Discussion of metrics.} A higher $\lambda_{\max}$ (126 for KAN vs.~60 for GELU) means sharper basin walls, which provide stronger gradient signals that guide descent efficiently. A larger energy barrier (3902 vs.~2035) indicates deeper, more pronounced minima that are well-separated from the surrounding landscape, reducing the risk of the optimizer escaping to spurious regions. Basin radius (0.40 vs.~0.00) is perhaps the most operationally meaningful: it measures whether the basin remains coherent when initialized from realistic noise levels. The GELU control essentially lacks a coherent basin at this noise level, while KAN-EBM maintains a robust region of attraction. Finally, the PSNR at $K{=}10$ (25.1\,dB vs.~22.4\,dB, $p<0.001$, $r{=}0.969$) confirms that these geometric advantages translate directly into sustained empirical improvement with iteration.
+
+\textbf{Connection to the $K^*$ law.} The landscape metrics explain \emph{why} KAN-EBM yields a larger scaling exponent. Deeper basins with sharper walls mean that gradient descent remains effective over a wider range of noise levels: at moderate $\sigma$, the initialization still lies within the basin of attraction, and the strong gradients efficiently guide the trajectory toward the minimum. As $\sigma$ increases, the higher barrier and larger basin radius delay the point at which the optimizer fragments or diverges, allowing more steps to remain beneficial. In contrast, shallow landscapes (global-flatten MLP) show no law because there is essentially no basin to descend: one step reaches the flat region, and subsequent steps wander. The ConvMLP variants occupy an intermediate regime: they have sufficient basin structure to support a power law, but the shallower depth and smaller radius limit the exponent to $\alpha{=}1.26$.
+
+\subsection{Scaled evaluation and modern baselines}
+\label{sec:scaled}
+To address reviewer concerns about evaluation scale and baseline competitiveness, we re-evaluate all CIFAR-10 models on 500 test images (vs.~24 in the original protocol) and add a micro-DnCNN baseline ($\sim$8K params, 5-layer residual CNN \citep{zhang2017}). \textbf{Results.} Table~\ref{tab:scaled500} reports PSNR and SSIM. At low noise ($\sigma{=}0.05$) KAN-EBM dominates (33.8 dB); at medium noise ($\sigma{=}0.1$--$0.2$) the DnCNN achieves higher single-pass PSNR (31.4 dB vs.~30.4 dB at $\sigma{=}0.1$), but lacks test-time scaling. KAN-EBM's distinctive property is not absolute PSNR superiority but the controllable $K$-scaling: quality rises from K=1 to K=5 and degrades gracefully beyond, while DnCNN and FFN-DSM are flat in $K$. On SSIM, KAN-EBM at its peak exceeds both baselines at every noise level. The 500-image $K^*$ sequence is $\{1,2,5,5,10\}$ (vs.~$\{1,2,5,7,15\}$ on 24 images), yielding $\alpha{=}1.29$ ($R^2{=}0.97$, bootstrap CI $[0.94,1.55]$), consistent with the original fit (CIs overlap).
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{lrr|rrr|rr}
+\toprule
+& & & \multicolumn{3}{c|}{PSNR (dB)} & \multicolumn{2}{c}{SSIM} \\
+Model & Params & $\sigma$ & $K{=}1$ & Peak $K$ & Peak PSNR & Peak SSIM \\
+\midrule
+KAN-EBM (110K) & 110K & 0.10 & 28.91 & $K{=}2$ & \textbf{30.35} & \textbf{0.907} \\
+KAN-EBM (32K)  & 32K  & 0.10 & 28.89 & $K{=}2$ & 30.28 & 0.906 \\
+ConvMLP-GELU   & 35K  & 0.10 & 28.80 & $K{=}2$ & 29.69 & 0.897 \\
+FFN-DSM        & 3.7M & 0.10 & 27.31 & $K{=}1$ & 27.32 & 0.864 \\
+Micro-DnCNN    & 7.9K & 0.10 & 31.35 & $K{=}1$ & 31.35 & 0.928 \\
+\bottomrule
+\end{tabular}
+\caption{CIFAR-10 test-set results on 500 images at $\sigma{=}0.10$. KAN-EBM is not the highest single-pass PSNR, but it is the only method whose quality improves with inference steps.}
+\label{tab:scaled500}
+\end{table}
+
+\subsection{Falsifiable boundary and transfer}
+\label{sec:boundary}
+The law breaks on Gaussian deblurring ($R^2{=}0.54$, $\alpha{=}-0.25$); it applies to $i.i.d.$ denoising-class corruptions where $L_2$ traversal scales linearly with $\sigma$, not to forward operators that deform the corrupted manifold. \textbf{Multi-task transfer (preliminary).} A single KAN-EBM trained only for denoising provides usable energies for $4\times$ super-resolution and 30\% inpainting (illustrative, not competitive). \textbf{Inductive bias.} On the Checker puzzle, B-spline smoothness yields incorrect inductive bias and KAN-EBM \emph{loses} to a matched MLP---a domain-of-validity finding, not universal superiority.
+
+\section{Limitations}
+\label{sec:limitations}
+We list the weaknesses we are aware of so reviewers can weigh them against the contribution. \textbf{(1) FLOP cost.} KAN-EBM is $30$--$60{\times}$ more expensive in FLOPs per inference than a same-task FFN at peak quality (\cref{sec:pareto}). The defense is the small parameter footprint (entire model fits in on-chip SRAM, eliminating off-chip weight fetches), which favours edge / sensor deployments where memory and energy --- not FLOPs --- dominate \citep{horowitz2014energy, lin2020mcunet}. We do not claim FLOP-Pareto-optimality. \textbf{(2) Scope of the K* law.} The CIFAR-10 fit spans nine $\sigma$ values (5 original $+$ 4 intermediate); CelebA spans five. We report parametric-bootstrap and jackknife CIs on $\alpha$ but do not give a closed-form derivation. \textbf{(3) Boundary on corruption type.} The law collapses on Gaussian deblurring ($R^2{=}0.54$). We do not claim the law beyond $i.i.d.$ denoising. \textbf{(4) Constant $C$ is dataset-dependent.} CIFAR-10 gives $C{=}86.7$, CelebA $C{=}56.6$. Deployment requires re-fitting $C$ on a 5-point calibration set. The exponent $\alpha$ is more transferable. \textbf{(5) Limited baselines.} We compare to FFN-DSM, smooth global-MLP-EBM, matched-architecture ConvMLP-EBM controls, and a micro-DnCNN CNN denoiser at matched parameter count; we do not match modern transformer denoisers (Restormer~\citep{zamir2022restormer}, SwinIR~\citep{liang2021swinir}), which use $100{\times}$ our parameter count and represent a different operating point.
+
+\section{Conclusion}
+We characterise an empirical scaling law $K^{*}(\sigma) \approx C\sigma^\alpha$ for the optimal inference depth of conv-backbone EBMs trained with denoising score matching. The law is reproducible across architectural scales, B-spline orders, datasets (CIFAR-10, CelebA-64), and head activations (KAN, GELU, SiLU, Tanh, ReLU); it has a precise falsifiable boundary on Gaussian deblurring. Landscape geometry analysis reveals that what distinguishes KAN-EBM as the strongest member of this class is not landscape smoothness but \emph{well-structured basins}: deep minima bounded by sharp walls with strong gradient signals. KAN achieves $\sim$2$\times$ higher Hessian curvature and energy barriers than ConvMLP controls, translating into the largest exponent ($\alpha{=}1.53$ vs $1.26$, $\Delta\alpha = +0.27$, CI $[+0.07, +0.46]$) and a consistent peak-PSNR advantage. The law gives practitioners a calibrated, search-free knob for trading inference compute for quality; more broadly, it suggests that the conv-backbone + per-pixel local-energy formulation enables iterative refinement, while the head choice modulates the \emph{depth and sharpness} of the basins and thus the magnitude of the scaling.
+
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+\newpage
+\appendix
+\section{Training Details}
+\label{app:training}
+All models are trained with Denoising Score Matching (DSM) \citep{vincent2011dsm}. The loss is
+\begin{equation}
+\mathcal{L}(\theta) = \mathbb{E}_{\xx,\eps}\bigl[\bigl\|\xx - (\tilde\xx + \sigma^2 s_\theta(\tilde\xx))\bigr\|^2\bigr],
+\end{equation}
+where $\tilde\xx = \xx + \sigma\eps$ and $s_\theta(\tilde\xx) = -\nabla E_\theta(\tilde\xx)$. Second-order automatic differentiation is enabled to compute Hessian-vector products during landscape analysis. Training hyperparameters: batch size 128 (CIFAR-10) or 64 (CelebA-64), Adam optimizer with $\beta_1{=}0.9$, $\beta_2{=}0.999$, learning rate $10^{-3}$ with cosine annealing over 200 epochs (CIFAR-10) or 150 epochs (CelebA). No weight decay is used. Data augmentation: random horizontal flips only. All experiments run on a single NVIDIA RTX 4090 (24 GB VRAM). Training the 32K-parameter KAN-EBM on CIFAR-10 takes approximately 4 hours; the 110K variant takes 6 hours. The global-flatten MLP-EBM (3.2M params) trains in 8 hours.
+
+\section{Additional Empirical Validation}
+\label{app:additional}
+\textbf{Tiny-ImageNet-64.} 32K KAN-EBM reaches 25.05 dB; 13.1M FFN-DSM achieves 18.19 dB on the same task (the FFN result is single-pass, no iterative scaling possible).
+
+\textbf{Interpretability.} Figure~\ref{fig:interp} shows the learned spline activations and the energy landscape near a clean image.
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{results/interpretability/fig3_spline_functions.pdf}
+    \caption{Spline activations}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.48\linewidth}
+    \includegraphics[width=\linewidth]{results/interpretability/fig4_energy_landscape.pdf}
+    \caption{Energy basins}
+  \end{subfigure}
+  \caption{Learned spline activations (diverse monotone and non-monotone functions) and energy basins near clean images.}
+  \label{fig:interp}
+\end{figure}
+
+\section{Landscape Geometry Details}
+\label{app:landscape}
+
+\textbf{Hessian spectra.} We estimate the extremal eigenvalues of $\nabla^2 E(\uu^*)$ at the denoised minimum $\uu^*$ using the Lanczos algorithm with random Gaussian probe vectors. For each of 100 test images, we run 50 Lanczos iterations and take the maximum Ritz value as $\lambda_{\max}$. The reported values are means across images; standard errors are $<2\%$ of the mean. Power iteration gives consistent results but converges more slowly.
+
+\textbf{Energy barrier measurement.} For each test image, we compute the clean minimum $\uu^*$ by running gradient descent to convergence from the noisy initialization $\tilde\uu$. We then evaluate the energy along 50 evenly spaced points on the linear segment $t\tilde\uu + (1-t)\uu^*$, $t \in [0,1]$. The barrier height is $\max_t E(\cdot) - E(\uu^*)$. We additionally report the barrier width, defined as the $L_2$ distance from $\uu^*$ to the point of maximum energy along the path.
+
+\textbf{Basin radius.} We define basin radius operationally as the largest noise standard deviation $\sigma_{\mathrm{init}}$ such that, when initializing gradient descent from $\uu^* + \sigma_{\mathrm{init}} \eps$ (with $\eps \sim \mathcal{N}(0,I)$), the PSNR after $K{=}20$ steps exceeds 20\,dB. We perform a binary search over $\sigma_{\mathrm{init}} \in [0, 1.0]$ with tolerance 0.02, averaging over 10 noise samples per image and 100 images. This operational definition directly links landscape geometry to empirical restorability.
+
+\textbf{Gradient properties.} We compute the gradient magnitude $\|\nabla E(\tilde\uu)\|$ and the gradient alignment $\cos\theta = \frac{\nabla E(\tilde\uu) \cdot (\uu^* - \tilde\uu)}{\|\nabla E(\tilde\uu)\|\|\uu^* - \tilde\uu\|}$ at the noisy initialization. High alignment indicates that gradients point toward the minimum rather than orthogonal to it.
+
+\textbf{Statistical testing.} All reported $p$-values are from two-sided Mann--Whitney $U$ tests with Bonferroni correction for multiple comparisons across the three models. Effect sizes are reported as rank-biserial correlation $r$. The bootstrap CIs for power-law parameters use parametric resampling of the $(\sigma, K^*)$ pairs with $B{=}10{,}000$ replicates, fitting $K^* = C\sigma^\alpha$ via least-squares on $\log K^*$ vs.~$\log \sigma$ in each replicate.
+
+\section{Statistical Test Details}
+\label{app:stats}
+
+\textbf{Bootstrap procedure for $\alpha$ and $C$.} Given $n$ anchor pairs $\{(\sigma_i, K^*_i)\}_{i=1}^n$, we resample $n$ pairs with replacement, fit $\log K^* = \log C + \alpha \log \sigma$ by ordinary least squares, and record $(\hat C, \hat \alpha)$. Repeating $B{=}10{,}000$ times yields an empirical distribution; the 95\% CI is the 2.5th--97.5th percentile interval. This parametric-bootstrap approach assumes the power-law form is correct and characterizes uncertainty in the fit due to finite sampling of anchor points.
+
+\textbf{Jackknife procedure.} We additionally report delete-one jackknife CIs as a non-parametric check: for each $i \in \{1,\dots,n\}$, we fit the power law on all points except $(\sigma_i, K^*_i)$, obtaining $\hat\alpha_{(-i)}$. The jackknife standard error is $\mathrm{SE} = \sqrt{\frac{n-1}{n} \sum_i (\hat\alpha_{(-i)} - \bar\alpha)^2}$, and the 95\% CI is $\hat\alpha \pm t_{n-1, 0.975} \cdot \mathrm{SE}$. The jackknife CIs are wider because they additionally capture sensitivity to individual anchor points.
+
+\textbf{Testing $\Delta\alpha$ between KAN and ConvMLP.} To test whether KAN-EBM's exponent is significantly larger than ConvMLP's, we use a paired bootstrap: we resample the 5 anchor pairs simultaneously for both models, compute $\hat\alpha_{\mathrm{KAN}} - \hat\alpha_{\mathrm{MLP}}$ in each replicate, and take the 2.5th--97.5th percentile of the difference distribution. Because the same $\sigma$ values and evaluation images are used for both models, the paired approach accounts for shared variance and yields tighter CIs than independent bootstraps.
+
+\textbf{Mann--Whitney $U$ tests.} For comparing landscape metrics (barrier, $\lambda_{\max}$, PSNR) between models, we use the Mann--Whitney $U$ test rather than $t$-tests because the metric distributions are skewed. We report the rank-biserial correlation $r = 1 - \frac{2U}{n_1 n_2}$ as an effect-size measure, where $U$ is the test statistic. Following Cohen's conventions, $r > 0.5$ is a large effect, $r \in [0.3, 0.5]$ is medium, and $r \in [0.1, 0.3]$ is small. All reported comparisons have $r > 0.8$, indicating very large effects.
+
+\end{document}

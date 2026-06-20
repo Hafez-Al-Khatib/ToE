@@ -8,7 +8,7 @@ import os
 import sys
 
 sys.path.insert(0, "./src")
-from hamiltonian_field import HamiltonianField
+from predictive_coding_field import PredictiveCodingField
 
 def gaussian_blob(size, center, sigma=1.5):
     y, x = torch.meshgrid(torch.arange(size), torch.arange(size), indexing='ij')
@@ -22,7 +22,7 @@ def verify_physics():
     size = 16
     
     # Load Model
-    model = HamiltonianField(
+    model = PredictiveCodingField(
         n_channels=2, 
         height=size, 
         width=size, 

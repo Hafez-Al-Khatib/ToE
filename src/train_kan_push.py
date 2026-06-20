@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, "./src")
-from hamiltonian_field import HamiltonianField
+from predictive_coding_field import PredictiveCodingField
 from wave_solver import WaveBrain
 from unified_planner import UnifiedPlanner
 
@@ -54,7 +54,7 @@ def train_kan_physics():
     # 1. Model: Hamiltonian KAN
     # 2 Channels (Agent, Block) -> Energy
     # Filters=8 -> KAN Input=8
-    model = HamiltonianField(
+    model = PredictiveCodingField(
         n_channels=2, 
         height=size, 
         width=size, 

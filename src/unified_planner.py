@@ -124,28 +124,42 @@ class UnifiedPlanner(nn.Module):
         n_local_steps: int = 5
     ) -> dict:
         """
-        Perform one coupled planning-action step (Operator Splitting).
-        1. Global Advection (Semi-Lagrangian): Move everything along the wave.
-        2. Local Reaction (TNF): Sharpen/Interact to maintain physics.
+        Perform one coupled planning-action step using FORCE-BASED dynamics.
         """
         # 1. Global Planning: Get Time-to-Goal
         _, u_wave, _ = self.global_brain(current_map, source_pos=goal)
         
-        # 2. Guidance Field v = -∇T * strength
-        # (B, 2, H, W)
-        v = self.compute_guidance_field(u_wave) * self.drift_weight
+        # 2. Guidance Field v = -∇T (The 'Gravity' toward goal)
+        v = self.compute_guidance_field(u_wave)
         
-        # 3. Advection (Operator Split Step 1)
-        # Move the fluid STABLY without "checkerboarding"
-        advected_state = self.apply_advection(env_state, v)
+        # 3. Create Advection Fields
+        B, C, H, W = env_state.shape
+        flow = torch.zeros(B, C, 2, H, W, device=v.device)
         
-        # 4. Reaction (Operator Split Step 2)
-        # Evolve the detailed state (Sharpening / Interaction)
-        # Pass advection_field=None because we already moved it!
+        # Agent (ch 0) is pulled to goal
+        flow[:, 0] = v * self.drift_weight
+        
+        # Block (ch 1) is pushed AWAY from the agent's density
+        # Calculate -∇(agent)
+        agent_pad = F.pad(env_state[:, 0:1], (1, 1, 1, 1), mode='replicate')
+        da_dy = (agent_pad[:, :, 2:, 1:-1] - agent_pad[:, :, :-2, 1:-1]) / 2.0
+        da_dx = (agent_pad[:, :, 1:-1, 2:] - agent_pad[:, :, 1:-1, :-2]) / 2.0
+        
+        # The block only moves if the agent is close (density > 0.1)
+        # Push strength multiplier
+        push_strength = 2.0
+        flow[:, 1, 0] = -da_dy.squeeze(1) * push_strength
+        flow[:, 1, 1] = -da_dx.squeeze(1) * push_strength
+        
+        # 4. Advection (Operator Split Step 1)
+        # We explicitly advect FIRST so the block moves, then we apply TNF reaction
+        advected_state = self.apply_advection(env_state, flow)
+        
+        # 5. Reaction (Operator Split Step 2)
         new_state = self.local_brain.evolve(
             advected_state,
             n_steps=n_local_steps,
-            advection_field=None,
+            advection_field=None, 
             return_trajectory=False
         )
         

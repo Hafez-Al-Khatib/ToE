@@ -1,0 +1,113 @@
+% =====================================================================
+% Drop-in theory subsection for paper_v4.tex
+% Suggested placement: new \subsection inside the Experiments/Analysis
+% section, immediately AFTER the empirical scaling law (sec:kstar) and
+% BEFORE or merged with the landscape-geometry discussion. It reframes
+% the Hessian-trajectory "correlate" as a principled mechanism.
+%
+% Requires (add to references.bib -- see block at bottom of this file):
+%   engl1996regularization, yao2007early, raskutti2014early
+% Requires the figure: outputs/theory/spectral_shrinkage.pdf
+% =====================================================================
+
+\subsection{A spectral-regularization account of the law}
+\label{sec:theory}
+
+Why should the optimal inference depth obey a power law in $\sigma$, and why should
+its exponent depend on architecture? We give an account grounded in a classical fact
+the EBM test-time-compute literature has not connected to: \emph{early-stopped gradient
+descent on a quadratic energy is an iterative spectral regularizer}
+\citep{engl1996regularization, yao2007early, raskutti2014early}. Near a basin,
+$E_\theta(\uu)\approx \tfrac12 (\uu-\uu^\star)^\top A\,(\uu-\uu^\star)$; in the eigenbasis
+of $A$ (eigenvalues $\lambda_i$), constant-step descent
+$\uu_{t+1}=\uu_t-\eta\nabla E$ decouples and acts as a per-mode shrinkage,
+\begin{equation}
+u_K[i] = (1-\eta\lambda_i)^K\,\tilde u[i] = a_i(K)\,\tilde u[i],
+\qquad a_i(K)=r_i^K,\quad r_i = 1-\eta\lambda_i\in(0,1).
+\end{equation}
+The step count $K$ is thus a knob on an effective shrinkage factor---this is precisely
+Landweber iteration, whose regularization strength is governed by the stopping index.
+
+\paragraph{Single mode: a bias--variance optimum.}
+With per-mode signal variance $s_i^2$ and white noise $\sigma^2$, the expected error is
+$(1-a_i)^2 s_i^2 + a_i^2\sigma^2$, minimized by the Wiener/James--Stein shrinkage
+$a_i^\star = s_i^2/(s_i^2+\sigma^2)$. Solving $a_i^\star=r_i^K$ gives
+\begin{equation}
+K^\star(\sigma) = \frac{\ln\!\big(1+\sigma^2/s_i^2\big)}{\lvert\ln(1-\eta\lambda_i)\rvert},
+\end{equation}
+which increases with $\sigma$: noisier inputs require more shrinkage steps (the correct
+sign). A \emph{single} mode, however, cannot produce a stable non-integer exponent
+($K^\star\!\propto\!\sigma^2$ at small noise, logarithmic at large noise). This is exactly
+why the one-dimensional radial ansatz $E\!\propto\! r^p$ (predicting $\alpha=2-p$) fails to
+fit the data (\cref{sec:kstar}): the mechanism is mode-wise shrinkage across a
+\emph{spectrum}, not descent along a single radial coordinate.
+
+\paragraph{Many modes: the exponent is set by the curvature spectrum.}
+Take a natural-image signal spectrum $s_i^2\propto i^{-\beta}$ and a learned curvature
+that grows across modes, $\lambda_i\propto i^{\gamma}$ (a denoiser places large curvature
+on low-signal modes to suppress noise and small curvature on signal modes to preserve
+them; the exact Wiener filter is the special case $\gamma=\beta$). The signal--noise
+crossover sits at mode $i^\star\propto\sigma^{-2/\beta}$, and the number of steps needed
+to shrink it scales as $K^\star\propto\lambda_{i^\star}^{-1}\propto\sigma^{2\gamma/\beta}$:
+\begin{equation}
+K^\star(\sigma)\approx C\,\sigma^{\alpha}, \qquad \boxed{\;\alpha = 2\gamma/\beta\;}.
+\end{equation}
+\Cref{fig:theory} confirms this numerically: the model produces clean power laws
+($R^2>0.999$) whose exponent matches $2\gamma/\beta$, and natural-image $\beta\!\approx\!2$
+with a sub-Wiener $\gamma\!\approx\!1.3$ lands in the empirically observed band
+$\alpha\in[1.1,1.4]$. Two further qualitative facts fall out. First, stability forces
+$\eta\propto\lambda_{\max}^{-1}$, so the prefactor scales as $C\propto N^{\gamma}$ with
+image dimension $N$ while $\alpha$ does not---matching the observation that $C$ varies
+across datasets while $\alpha$ is stable (\cref{sec:predictive}). Second, the crossover
+$i^\star\propto\sigma^{-2/\beta}$ requires the corruption to displace the signal by an
+amount that scales as a power of $\sigma$, which holds for i.i.d.\ additive Gaussian noise
+but not for a deterministic forward operator such as blur---consistent with the law's
+collapse on Gaussian deblurring (\cref{sec:boundary}).
+
+\paragraph{Scope of the claim.}
+We present this as an \emph{illustrative mechanism}, not a fitted law for the trained
+networks. It reproduces the qualitative structure of our measurements---the power-law
+form, the correct sign, the observed band, the dataset-stable $\alpha$ with
+dimension-dependent $C$, and an architecture ordering driven by curvature-spectrum
+steepness. It does \emph{not} yet yield a first-principles prediction of each
+architecture's exponent: directly measuring the curvature--signal coupling in the
+data-covariance eigenbasis recovers only the gross ordering (the U-Net EBM has the
+steepest curvature; the piecewise-linear ReLU head has essentially none) but does not
+quantitatively reproduce the per-architecture $\alpha$, indicating the effective per-mode
+dynamics are not fully captured by data-basis diagonal curvature. Identifying the basis
+in which the learned dynamics decouple is left for future work; the trajectory-Hessian
+measurements of \cref{sec:landscape} are best read as empirical support for the
+curvature-spectrum picture rather than a closed-form derivation.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{outputs/theory/spectral_shrinkage.pdf}
+  \caption{\textbf{Spectral-shrinkage account of the inference-depth law (illustrative).}
+  \emph{(a)} Early-stopped gradient descent on a quadratic energy with a natural-image
+  signal spectrum ($\beta=2$) and curvature spectrum $\lambda_i\propto i^{\gamma}$ yields
+  a clean power law $K^*(\sigma)\approx C\sigma^{\alpha}$ ($R^2{>}0.999$); the exponent is
+  set by the curvature-spectrum steepness $\gamma$. \emph{(b)} The fitted exponent tracks
+  the closed-form prediction $\alpha=2\gamma/\beta$; a sub-Wiener $\gamma\approx1.3$ places
+  $\alpha$ in the empirically observed band (shaded). This is a mechanism candidate, not a
+  fit to the trained networks (see text).}
+  \label{fig:theory}
+\end{figure}
+
+% ---------------------------------------------------------------------
+% Add to references.bib:
+%
+% @book{engl1996regularization,
+%   title={Regularization of Inverse Problems},
+%   author={Engl, Heinz W. and Hanke, Martin and Neubauer, Andreas},
+%   year={1996}, publisher={Kluwer Academic Publishers}, series={Mathematics and Its Applications}}
+%
+% @article{yao2007early,
+%   title={On Early Stopping in Gradient Descent Learning},
+%   author={Yao, Yuan and Rosasco, Lorenzo and Caponnetto, Andrea},
+%   journal={Constructive Approximation}, volume={26}, number={2}, pages={289--315}, year={2007}}
+%
+% @article{raskutti2014early,
+%   title={Early Stopping and Non-parametric Regression: An Optimal Data-dependent Stopping Rule},
+%   author={Raskutti, Garvesh and Wainwright, Martin J. and Yu, Bin},
+%   journal={Journal of Machine Learning Research}, volume={15}, pages={335--366}, year={2014}}
+% ---------------------------------------------------------------------

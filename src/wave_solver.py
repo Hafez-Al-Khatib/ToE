@@ -167,8 +167,9 @@ class EikonalSolver(nn.Module):
         u[:, source_pos[0], source_pos[1]] = 0.0
         
         # Iterative Jacobi relaxation (parallel-friendly version of Fast Sweeping)
-        # We need many iterations because Jacobi converges slower than Gauss-Seidel
-        n_iters = self.n_sweeps * max(H, W) // 2
+        # We need many iterations because Jacobi converges slower than Gauss-Seidel 
+        # A conservative bound for severe maze paths is proportional to Area (H * W)
+        n_iters = self.n_sweeps * (H * W) // 4
         
         for _ in range(n_iters):
             u = self._jacobi_update(u, n, source_pos)

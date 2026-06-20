@@ -57,7 +57,7 @@ The answer **emerges** from the dynamics of a physical relaxation process.
 |--------|--------------------|--------------------|
 | **Output** | $y = f_\theta(x)$ | $x^* = \arg\min E_\theta(x)$ |
 | **Inference** | Single forward pass | Iterative dynamics |
-| **Computation** | $O(1)$ depth | $O(T)$ steps (controllable) |
+| **Computation** | Single pass | $O(T)$ steps (controllable) |
 | **Robustness** | Fragile | Natural filtering |
 
 ### Why Energy?

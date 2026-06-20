@@ -9,7 +9,7 @@ import random
 import sys
 
 sys.path.insert(0, "./src")
-from hamiltonian_field import HamiltonianField
+from predictive_coding_field import PredictiveCodingField
 
 # --- Sudoku Generator ---
 class SudokuGenerator:
@@ -86,7 +86,7 @@ def train_kan_sudoku():
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=32, shuffle=True)
     
     # 2. Model
-    model = HamiltonianField(
+    model = PredictiveCodingField(
         n_channels=9,
         height=9,
         width=9,
@@ -100,9 +100,10 @@ def train_kan_sudoku():
     # Do not hardcode "Sombrero". allow KAN to learn it.
     # But remove the "Gravity Well" bias that pulls to 0.
     # Initialize polynomial potential to FLAT (0.0) so KAN drives dynamics.
-    with torch.no_grad():
-        model.potential_a.fill_(0.0)
-        model.potential_b.fill_(0.0)
+    # PHILOSOPHY ALIGNMENT: 
+    # Do not hardcode "Sombrero". allow KAN to learn it.
+    # The KAN is initialized with small random weights (unbiased) by default.
+    # No need to manually zero polynomials as they are gone.
     
     optimizer = optim.Adam(model.parameters(), lr=0.001) # Lower LR for stability
     

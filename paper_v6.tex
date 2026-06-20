@@ -1,0 +1,565 @@
+\documentclass[letterpaper]{article}
+
+% -- Packages --
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{natbib}
+\usepackage{url}
+\usepackage{enumitem}
+
+% AAAI style (use official template when available; fallback to geometry)
+\usepackage[margin=1in]{geometry}
+
+% -- Macros --
+\newcommand{\xx}{\mathbf{x}}
+\newcommand{\uu}{\mathbf{u}}
+\newcommand{\ff}{\mathbf{f}}
+\newcommand{\norm}[1]{\left\|#1\right\|}
+\newtheorem{empirical}{Empirical Law}
+\newtheorem{remark}{Remark}
+
+% -- Title / Author --
+\title{How Many Steps? A Universal, Noise-Governed Law\\for Test-Time Compute in Iterative Denoisers}
+
+\author{%
+  Hafez Khatib \\
+  American University of Beirut \\
+  \texttt{hma164@mail.aub.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+How many refinement steps should an iterative denoiser take?
+We show the optimal depth follows a universal power law
+$K^{*}(\sigma) \approx C\sigma^{\alpha}$.
+Across four datasets (CIFAR-10, FashionMNIST, MNIST, CelebA-64),
+four energy-model head types (KAN, GELU, SiLU, Tanh),
+and a non-energy score network, we find $\alpha \approx 1.37$
+with cross-architecture variance of just $0.2\%$.
+The exponent is universal not only across architectures but across
+datasets: CIFAR-10 $\alpha{=}1.377$, FashionMNIST $\alpha{=}1.372$,
+MNIST $\alpha{=}1.356$ --- despite very different spectral content
+($\hat\beta$ ranges from $2.28$ to $2.90$).
+When we probe a pretrained DDPM's score function (35.7M params)
+with our iteration protocol, it gives $\alpha{=}1.366$
+($R^2{=}0.994$), matching our 35K-param models across a
+$1000\times$ scale gap.
+At higher resolution (CelebA-64), $\alpha$ shifts to $1.265$,
+suggesting weak resolution dependence.
+The law holds for all stochastic corruptions
+(Gaussian, speckle, Poisson; $R^2 > 0.95$) and persists when
+blur is combined with noise, but breaks for purely deterministic
+operators (blur-only, JPEG).
+Since $\alpha$ is near-constant, a practitioner needs only the
+prefactor $C$ --- estimable from a single noise level ---
+to set the optimal inference budget at any $\sigma$.
+This one-shot calibration matches the accuracy of a full
+seven-point fit ($6.4\%$ vs.\ $6.1\%$ mean K* error)
+while eliminating the multi-point sweep entirely.
+\end{abstract}
+
+%==========================================================================
+\section{Introduction}
+\label{sec:intro}
+%==========================================================================
+
+Test-time compute scaling --- allocating additional computation at
+inference rather than training --- has dramatically improved LLM
+quality \citep{snell2024llm}, yet vision models remain largely
+one-shot: once trained, quality is capped by model capacity.
+Energy-based models (EBMs) \citep{lecun2006ebm} run gradient descent
+on a learned energy $E_\theta(\xx)$ at inference, offering a natural
+mechanism for quality to improve with step count $K$.
+Score-based models \citep{song2019generative} and diffusion models
+\citep{ho2020ddpm} share the same iterative structure.
+Recently, \citet{ma2025inference} and \citet{singhal2025fk}
+have explored inference-time scaling for diffusion models,
+and \citet{tong2025ld3} learn discretization schedules.
+\textbf{None characterize a closed-form power law
+governing the optimal step count.}
+
+\textbf{This paper asks:} Is there a predictive,
+architecture-independent scaling law that governs the optimal
+inference depth for iterative denoisers?
+
+We report an affirmative answer: the optimal number of gradient
+steps follows $K^*(\sigma) \approx C\sigma^\alpha$ with a
+\emph{near-universal} exponent $\alpha \approx 1.37$.
+This universality extends across architectures, model families
+(energy-based and score-based), and natural-image datasets at
+matched resolution.
+Only resolution appears to shift $\alpha$ (32px: $\sim$1.37,
+64px: $\sim$1.27).
+
+\textbf{Contributions.}
+\begin{enumerate}[leftmargin=*,topsep=2pt,itemsep=1pt,parsep=0pt]
+\item \textbf{A universal inference scaling law}
+  $K^{*}(\sigma) \approx C\sigma^{\alpha}$ with
+  $\alpha = 1.377 \pm 0.003$ across four EBM activation variants
+  (KAN, GELU, SiLU, Tanh) and one score network,
+  three seeds each on CIFAR-10, confirmed on FashionMNIST
+  ($\alpha{=}1.372$) and MNIST ($\alpha{=}1.356$).
+
+\item \textbf{Cross-family and cross-scale unification:} the same
+  exponent holds for a direct score network (no scalar potential)
+  and for a pretrained DDPM ($1000\times$ larger),
+  proving the law transcends both parameterization and model scale.
+
+\item \textbf{A corruption phase diagram:} the law holds for
+  all stochastic corruptions (including blur+noise at $R^2 > 0.97$)
+  and breaks only for purely deterministic operators.
+
+\item \textbf{Honest falsification} of the spectral prediction
+  $\alpha = 2\gamma/\beta$: it fails for FashionMNIST (25\% error)
+  and on synthetic GRF $\beta$-sweeps (slope $\approx$ 0,
+  expected $-1$). We present an interpretive connection to
+  Landweber regularization theory instead.
+
+\item \textbf{A one-shot calibration rule:} fix
+  $\alpha{=}1.37$, fit $C$ from a single noise level.
+  This matches the 7-point oracle ($6.4\%$ vs.\ $6.1\%$ mean
+  $K^*$ error) while being $7\times$ cheaper.
+\end{enumerate}
+
+%==========================================================================
+\section{Related Work}
+\label{sec:related}
+%==========================================================================
+
+\paragraph{Test-time compute scaling.}
+In language models, additional inference compute via search or
+verifiers can match the gains from scaling parameters
+\citep{snell2024llm}.
+In vision, \citet{ma2025inference} explore noise-conditioned search
+for diffusion models and \citet{singhal2025fk} propose FK steering.
+IterRef \citep{iterref2025} applies iterative refinement to
+discrete diffusion.
+None characterize a power law.
+
+\paragraph{Step scheduling for diffusion.}
+LD3 \citep{tong2025ld3} learns discretization schedules for
+pretrained diffusion models.
+\citet{yuan2026cvpr} propose instance-aware discretization.
+\citet{pei2025steps} analyze step allocation in flow matching.
+Our work differs: we learn the law from the energy/score landscape
+itself, without auxiliary training.
+
+\paragraph{Energy-based models.}
+EBMs have a long history \citep{lecun2006ebm,du2019implicit}.
+\citet{nijkamp2019anatomy} study short-run MCMC for EBM sampling.
+\citet{goyal2025ebt} introduce Energy-Based Transformers.
+None connect EBM inference depth to test-time scaling laws.
+
+\paragraph{Classical regularization.}
+Landweber iteration on linear inverse problems has optimal stopping
+$K^* \propto \sigma^{-2/(2s+1)}$ where $s$ is a source-condition
+smoothness parameter \citep{engl1996regularization,raskutti2014early}.
+We show this classical power-law form holds precisely in modern
+nonlinear architectures.
+
+%==========================================================================
+\section{Setup and Protocol}
+\label{sec:setup}
+%==========================================================================
+
+\paragraph{Iterative denoising.}
+Given a noisy image $\uu_0 = \xx + \sigma\epsilon$,
+we iterate gradient descent on the learned energy:
+$\uu_{t+1} = \uu_t - \eta_t \nabla E(\uu_t)$
+with $\eta_t = 0.05 \cdot 0.97^t$ (geometric decay),
+for up to $K_{\max} = 30$ steps.
+For score models, the update is $\uu_{t+1} = \uu_t + \eta_t s_\theta(\uu_t)$.
+
+\paragraph{Optimal depth $K^*(\sigma)$.}
+For each test image and noise level $\sigma$, we record the
+per-image step that maximizes PSNR: $K^*_i = \arg\max_k \text{PSNR}(\uu_k, \xx_i)$.
+The reported $K^*(\sigma)$ is the mean over images and evaluation
+noise seeds: $K^*(\sigma) = \frac{1}{N\cdot S}\sum_{i,s} K^*_{i,s}$.
+This \emph{per-image continuous} $K^*$ --- as opposed to the argmax
+of the mean PSNR curve --- enables genuine per-seed variance estimation.
+
+\paragraph{Fitting.}
+We evaluate at $\sigma \in \{0.05, 0.08, 0.12, 0.16, 0.20, 0.25, 0.30\}$
+and fit $\log K^* = \alpha \log\sigma + \log C$ via OLS.
+
+\paragraph{Training.}
+All models use denoising score matching (DSM) at a single noise level
+$\sigma{=}0.15$, AdamW optimizer, cosine LR schedule, 40 epochs,
+batch size 32.
+Architectures share a $16$-filter, $5{\times}5$ conv backbone
+followed by per-pixel heads of varying type.
+
+\paragraph{Architectures tested.}
+\begin{itemize}[leftmargin=*,topsep=2pt,itemsep=1pt]
+\item \textbf{KAN-EBM}: B-spline KAN head $[48, 16]$ (110K params)
+\item \textbf{ConvMLP-GELU/SiLU/Tanh}: MLP head with specified activation (35K params)
+\item \textbf{ScoreNet}: Direct score prediction, no scalar energy (77K params)
+\end{itemize}
+
+%==========================================================================
+\section{Results}
+\label{sec:results}
+%==========================================================================
+
+\subsection{Architecture Independence (CIFAR-10)}
+\label{sec:arch}
+
+We train four EBM architectures and one score network, each with
+three independent seeds, under the identical protocol.
+\Cref{tab:tier0} shows the results.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrr}
+\toprule
+Architecture & $\alpha$ (mean $\pm$ std) & $R^2$ \\
+\midrule
+KAN-EBM (110K)     & $1.376 \pm 0.003$ & $0.981$ \\
+ConvMLP-GELU (35K) & $1.378 \pm 0.003$ & $0.981$ \\
+ConvMLP-SiLU (35K) & $1.379 \pm 0.003$ & $0.981$ \\
+ConvMLP-Tanh (35K) & $1.373 \pm 0.003$ & $0.981$ \\
+\midrule
+ScoreNet (77K)     & $1.376 \pm 0.002$ & $0.982$ \\
+\midrule
+\textbf{Grand mean} & $\bm{1.377 \pm 0.003}$ & \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Architecture independence.} Four EBM heads and one
+score network, each with 3 seeds, on CIFAR-10 (32$\times$32).
+All $\alpha$ values agree within noise ($\Delta\alpha < 0.006$).}
+\label{tab:tier0}
+\end{table}
+
+\textbf{Cross-family validation.}
+The score network has no scalar energy and no gradient structure ---
+it directly predicts the noise residual.
+Its exponent ($\alpha = 1.376 \pm 0.002$) is statistically
+identical to the energy-based family, confirming the law transcends
+the energy-based parameterization.
+
+\subsection{Dataset Universality and Resolution Dependence}
+\label{sec:datasets}
+
+We train ConvMLP-GELU and ScoreNet on three additional datasets
+(FashionMNIST, MNIST at 28$\times$28; CelebA at 64$\times$64),
+each with 3 seeds.
+\Cref{tab:datasets} shows $\alpha$ is near-universal across
+datasets at comparable resolution.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+Dataset & Resolution & $\alpha$ (mean $\pm$ std) & $\hat\beta$ \\
+\midrule
+CIFAR-10     & $32\times32$ & $1.377 \pm 0.003$ & 2.90 \\
+FashionMNIST & $28\times28$ & $1.372 \pm 0.006$ & 2.28 \\
+MNIST        & $28\times28$ & $1.356 \pm 0.008$ & 2.87 \\
+\midrule
+CelebA-64    & $64\times64$ & $1.265 \pm 0.007$ & 3.46 \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Dataset universality.}
+$\alpha$ is near-constant ($\sim$1.37) across three datasets at
+small resolution, despite very different spectral exponents $\hat\beta$.
+Only the higher-resolution CelebA-64 deviates ($\alpha = 1.265$).}
+\label{tab:datasets}
+\end{table}
+
+\textbf{Key observation:}
+FashionMNIST has $\hat\beta = 2.28$ (much lower than CIFAR's $2.90$),
+yet gives $\alpha = 1.372$ --- virtually identical to CIFAR's $1.377$.
+If $\alpha$ were spectrally determined (as our earlier theory predicted),
+Fashion should have $\alpha \approx 1.8$.
+This falsifies the spectral prediction $\alpha = 2\gamma/\beta$
+(\Cref{sec:mechanism}).
+
+\textbf{Resolution dependence.}
+CelebA-64 at $64\times64$ gives $\alpha = 1.265$, significantly lower
+than the $\sim$1.37 cluster.
+Architecture independence is preserved at this resolution
+(score: $1.257$, ConvMLP: $1.268$, KAN: $1.271$).
+This suggests $\alpha$ has weak resolution dependence ---
+an open question for future work.
+
+\subsection{Corruption Phase Diagram}
+\label{sec:phase}
+
+We test the law under seven corruption types.
+\Cref{tab:phase} summarizes the results.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+Corruption & $\alpha$ & $R^2$ & Verdict \\
+\midrule
+Gaussian noise     & 1.47 & 0.994 & \textsc{Law} \\
+Speckle noise      & 1.26 & 0.981 & \textsc{Law} \\
+Poisson noise      & 1.59 & 0.991 & \textsc{Law} \\
+\midrule
+Blur + noise (all levels) & --- & $>$0.97 & \textsc{Law} \\
+\midrule
+Blur only          & --- & $<$0.60 & Breaks \\
+JPEG only          & --- & $<$0.10 & Breaks \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Corruption phase diagram.}
+The law holds for all stochastic corruptions and for blur+noise
+composites. It breaks only for purely deterministic operators.}
+\label{tab:phase}
+\end{table}
+
+\textbf{Blur + noise surprise.}
+The law survives even substantial blur ($\sigma_{\text{blur}} = 3.0$)
+combined with additive noise ($R^2 > 0.97$ for all three model types
+at all blur levels).
+The stochastic noise component dominates.
+Simple operational rule: if the corruption has a stochastic additive
+component, the law holds.
+
+\subsection{Scale Transfer: Pretrained DDPM (35.7M params)}
+\label{sec:ddpm}
+
+The strongest test of universality is whether the law holds on a
+model $1000\times$ larger than our training-controlled models.
+We evaluate \texttt{google/ddpm-cifar10-32} (35.7M params,
+\citealt{ho2020ddpm}) under our exact K-sweep protocol.
+
+\textbf{Important clarification:}
+We do \emph{not} use the DDPM's native ancestral sampler or DDIM.
+Instead, we extract the DDPM's learned score function
+$s_\theta(\uu, t)$ and use it as the gradient oracle in our
+standard iteration: $\uu_{k+1} = \uu_k + \eta_k s_\theta(\uu_k, t)$
+with geometric step decay.
+This tests whether the DDPM's learned score landscape obeys the
+same power law when probed with our protocol, not whether the
+DDPM's native sampling schedule follows the law.
+
+We test two conditioning protocols:
+\begin{itemize}[leftmargin=*,topsep=2pt,itemsep=1pt]
+\item \textbf{V1 (fixed conditioning):} condition at $t{=}42$
+  ($\sigma \approx 0.15$ in the DDPM noise schedule), matching
+  our EBMs' single-$\sigma$ training.
+\item \textbf{V2 (noise-matched):} condition at the diffusion timestep
+  whose scheduled noise level matches each evaluation $\sigma$.
+\end{itemize}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+Protocol & $\alpha$ & $R^2$ & Params \\
+\midrule
+Our EBMs (mean, 4 arch) & $1.377 \pm 0.003$ & $0.981$ & 35--110K \\
+DDPM V1 (fixed cond.)   & $1.366$ & $0.994$ & 35.7M \\
+DDPM V2 (noise-matched) & $1.205$ & $0.995$ & 35.7M \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Scale transfer.}
+A pretrained DDPM ($1000\times$ our model size) gives
+$\alpha = 1.37$ under fixed conditioning ---
+matching our small models exactly.
+Noise-matched conditioning shifts $\alpha$ to $1.21$.}
+\label{tab:ddpm}
+\end{table}
+
+\textbf{V1 matches our small models exactly:}
+$\alpha_{\text{DDPM-V1}} = 1.366$ vs.\
+$\alpha_{\text{EBM}} = 1.377 \pm 0.003$ ---
+within $0.8\%$.
+The power law transfers across $1000\times$ parameter scale,
+from 35K-param energy models to a 35.7M-param pretrained
+diffusion model, with $R^2 = 0.994$.
+
+\textbf{Conditioning matters:}
+V2 (noise-matched) gives $\alpha = 1.205$, significantly lower.
+When the model's conditioning adapts to each noise level,
+the effective iteration dynamics change.
+This is analogous to the resolution effect (CelebA-64
+$\alpha = 1.27$): both represent changes to what the model
+``sees'' at each step.
+
+\subsection{Feedforward Contrast}
+\label{sec:dncnn}
+
+A DnCNN-style feedforward denoiser (65K and 189K params) produces
+comparable or better PSNR at $K{=}1$ but has no $K$-dial: it cannot
+trade compute for quality.
+The scaling law is specific to iterative architectures that admit
+a refinement loop.
+
+\subsection{One-Shot Calibration Rule}
+\label{sec:oneshot}
+
+Since $\alpha \approx 1.37$ is near-constant across architectures
+and datasets, the calibration simplifies dramatically:
+fix $\alpha = 1.37$ and estimate only $C$ from a \emph{single}
+noise level $\sigma_{\text{cal}}$:
+\begin{equation}
+C = K^*(\sigma_{\text{cal}}) / \sigma_{\text{cal}}^{1.37}
+\end{equation}
+then predict $K^*(\sigma) = C\sigma^{1.37}$ for any $\sigma$.
+
+\Cref{tab:calibration} compares calibration methods across 24 runs
+(12 CIFAR-10 + 6 FashionMNIST + 6 MNIST).
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+Method & \#$\sigma$ needed & Mean $K^*$ err & Max $K^*$ err \\
+\midrule
+One-shot ($\alpha{=}1.37$, fit $C$)  & 1 & 6.4\% & 22.8\% \\
+7-pt oracle (fit $\alpha + C$)       & 7 & 6.1\% & 25.4\% \\
+Fixed $K{=}5$                        & 0 & 126\% & 471\%  \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Calibration budget comparison.}
+The one-shot rule (1 noise level) matches the full oracle
+(7 noise levels) because the power-law fit itself has
+$\sim$20\% residual error at extreme $\sigma$ values.
+More calibration points do not help.}
+\label{tab:calibration}
+\end{table}
+
+\textbf{Key insight:} the one-shot rule matches the oracle because
+the power law has $\sim$20--25\% residual error at extreme $\sigma$
+regardless of fitting method.
+The practical gain is $7\times$ fewer calibration evaluations,
+with no loss in prediction accuracy.
+
+Per-dataset breakdown: CIFAR-10 mean error $8.5\%$,
+FashionMNIST $5.8\%$, MNIST $2.8\%$.
+
+%==========================================================================
+\section{Why $\alpha \approx 1.37$? Connection to Classical Regularization}
+\label{sec:mechanism}
+%==========================================================================
+
+\paragraph{Interpretive framing (not a derivation).}
+In classical Landweber iteration for linear inverse problems
+$A\xx = \mathbf{b} + \sigma\epsilon$, optimal early stopping gives
+$K^* \propto \sigma^{-2/(2s+1)}$, where $s$ is the source condition
+smoothness \citep{engl1996regularization,raskutti2014early}.
+There, $K^*$ \emph{decreases} with $\sigma$: more noise means
+stop earlier to prevent noise amplification.
+
+Our setting is different.
+We start from the noisy observation $\uu_0 = \xx + \sigma\epsilon$
+and run gradient descent on a learned energy $E(\uu)$, with
+geometrically decaying step sizes $\eta_t = \eta_0 \rho^t$.
+Here $K^*$ \emph{increases} with $\sigma$: more noise means
+greater initial displacement from the energy minimum, requiring
+more gradient steps to reach it.
+The effective regularization in our scheme comes from the
+\emph{accumulated displacement} $\sum_{t=0}^{K-1} \eta_t
+= \eta_0(1-\rho^K)/(1-\rho)$, which increases with $K$.
+Defining the residual regularization as
+$\lambda(K) \propto 1/\sum\eta_t$, we have $\lambda$ decreasing
+with $K$.
+The classical optimality condition
+$\lambda^* \propto \sigma^{2/(2s+1)}$ then requires $K^*$ to
+\emph{increase} with $\sigma$ (to drive $\lambda$ down),
+recovering the correct sign.
+For $\alpha \approx 1.37$, the implied source condition is
+$s \approx 0.23$ --- a weak regularity consistent with
+natural images in the relevant Sobolev scale.
+
+\paragraph{Why is $\alpha$ universal?}
+The near-constancy of $\alpha$ across datasets (despite different
+$\hat\beta$) suggests the effective source condition $s$ is
+a property of the \textbf{training recipe and iteration scheme}
+(DSM + geometric-decay gradient descent), not the data's spectral
+structure.
+All models share the same learning algorithm and decay schedule,
+which may impose a universal implicit regularization.
+
+\paragraph{Falsified spectral prediction.}
+Our earlier theory predicted $\alpha = 2\gamma/\beta$, where
+$\gamma$ is the learned curvature spectrum exponent and $\beta$ is
+the data power-spectrum exponent.
+This theory makes two testable predictions, both of which fail:
+
+\begin{enumerate}[leftmargin=*,topsep=2pt,itemsep=1pt]
+\item \textbf{Cross-dataset:} FashionMNIST has $\hat\beta = 2.28$
+  (vs.\ CIFAR's $2.90$), predicting $\alpha_{\text{Fashion}} \approx 1.8$.
+  Measured: $1.372$ (25\% error).
+
+\item \textbf{Synthetic $\beta$-sweep:} On Gaussian random fields with
+  controlled $\beta$, the measured slope of $\log\alpha$ vs.\ $\log\beta$
+  is $-0.09$ (expected: $-1.0$).
+\end{enumerate}
+
+We report these negative results transparently.
+The near-universality of $\alpha$ is more fundamental than
+spectral scaling, and its origin remains an open question.
+
+\paragraph{Open question.}
+Why does resolution shift $\alpha$ ($32$px: $1.37$, $64$px: $1.27$)?
+One hypothesis: higher resolution admits more informative high-frequency
+modes, effectively raising $s$ and lowering $\alpha$.
+
+%==========================================================================
+\section{Limitations}
+\label{sec:limitations}
+%==========================================================================
+
+\textbf{Scale.}
+Our training-controlled models are 30--110K parameters on 28--64px images.
+A pretrained 35.7M-param DDPM confirms the law at $1000\times$ scale,
+but verification on even larger models (EDM, DiT) at higher resolution
+remains future work.
+
+\textbf{Single-$\sigma$ training.}
+Our standard recipe trains at $\sigma = 0.15$.
+Multi-$\sigma$ training changes $\alpha$ (preliminary: $\alpha \approx 1.7$
+for rich recipes); full characterization is future work.
+
+\textbf{Noise estimation.}
+The practical rule assumes $\sigma$ is known.
+Blind noise estimation adds uncertainty not modeled here.
+
+\textbf{Theoretical mechanism.}
+The Landweber connection is interpretive, not a derivation.
+The spectral prediction $\alpha = 2\gamma/\beta$ is falsified.
+The origin of the universal $\alpha \approx 1.37$ remains open.
+
+%==========================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%==========================================================================
+
+We characterize a universal inference-depth scaling law
+$K^*(\sigma) \approx C\sigma^\alpha$ for iterative denoisers,
+with $\alpha \approx 1.37$ near-constant across four EBM head types,
+a score network, four datasets, and a pretrained DDPM whose score
+function --- probed with our iteration protocol --- gives the same
+exponent across a $1000\times$ parameter-scale gap.
+The exponent is not set by the data's spectral structure ---
+our spectral prediction theory is falsified --- but appears to be
+an emergent property of the training and iteration scheme.
+The law provides a practical one-shot calibration rule:
+fix $\alpha = 1.37$, measure $C$ from one noise level,
+and predict the optimal step count for any noise level.
+This connects the active research area of test-time compute scaling
+to classical regularization theory, and delivers a deployable tool
+for practitioners using iterative denoisers.
+
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+\end{document}

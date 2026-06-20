@@ -276,44 +276,109 @@ def collate_fn(batch):
 
 
 def path_distance_loss(
+    n: torch.Tensor,
     u: torch.Tensor,
     maze: torch.Tensor,
     ground_truth_path: List[Tuple[int, int]],
     source: Tuple[int, int],
-    target: Tuple[int, int]
+    target: Tuple[int, int],
+    n_wall_target: float = 5.0,
+    n_passage_target: float = 1.0,
 ) -> torch.Tensor:
     """
-    Loss that encourages the travel time field to match optimal path.
-    
-    Three components:
-    1. Target reachability: u(target) should be reasonable
-    2. Wall penalty: walls should have high travel time
-    3. Path optimality: travel time along ground truth path should be low
+    Scale-invariant path-distance loss (PLANNING_AUDIT.md fix B).
+
+    The original version mixed an absolute target-time term with a hard-coded
+    wall threshold of 10.0 and an unnormalized path-sum, which made the total
+    grow as O(maze diameter * n_max). This version normalizes every term so
+    the total is dimensionless and stays in [0, ~3] regardless of maze size.
+
+    Components:
+      1. Target reachability        u(target) / diameter
+      2. Wall slowness margin       relu(n_wall_target - n_wall) / n_wall_target
+      3. Passage slowness margin    relu(n_pass - n_passage_target) / n_passage_target
+      4. Path optimality            mean_path(u) / diameter
     """
-    # Loss 1: Target should be reachable
-    target_loss = u[0, target[0], target[1]]
-    
-    # Loss 2: Wall penalty — walls should have high travel time
-    wall_mask = maze[0, 0] < 0.5  # 0 = wall
-    wall_u = u[0, wall_mask]
-    if len(wall_u) > 0:
-        wall_loss = F.relu(10.0 - wall_u.mean())
+    H, W = maze.shape[-2], maze.shape[-1]
+    diameter = float(H + W)
+
+    target_loss = u[0, target[0], target[1]] / diameter
+
+    wall_mask = maze[0, 0] < 0.5
+    wall_n = n[0, wall_mask]
+    if wall_n.numel() > 0:
+        wall_loss = F.relu(n_wall_target - wall_n).mean() / n_wall_target
     else:
-        wall_loss = torch.tensor(0.0, device=u.device)
-    
-    # Loss 3: Path should have low cumulative cost (DIFFERENTIABLE)
-    # Ground truth path cells should have low travel time
+        wall_loss = torch.zeros((), device=u.device)
+
+    passage_mask = maze[0, 0] > 0.5
+    passage_n = n[0, passage_mask]
+    if passage_n.numel() > 0:
+        passage_loss = (
+            F.relu(passage_n - n_passage_target).mean() / n_passage_target
+        )
+    else:
+        passage_loss = torch.zeros((), device=u.device)
+
     if ground_truth_path is not None and len(ground_truth_path) > 0:
-        # Index travel time directly (keeps gradients flowing)
-        path_times = torch.stack([
-            u[0, p[0], p[1]] for p in ground_truth_path
-        ])
-        path_loss = path_times.mean()
+        path_times = torch.stack(
+            [u[0, p[0], p[1]] for p in ground_truth_path]
+        )
+        path_loss = path_times.mean() / diameter
     else:
-        path_loss = torch.tensor(0.0, device=u.device)
-    
-    # ALL three terms contribute — path_loss was previously discarded!
-    return target_loss + 0.1 * wall_loss + 0.5 * path_loss
+        path_loss = torch.zeros((), device=u.device)
+
+    return target_loss + wall_loss + passage_loss + 0.5 * path_loss
+
+
+def pretrain_encoder_mse(
+    model: WaveBrain,
+    train_loader: DataLoader,
+    device: torch.device,
+    n_steps: int = 500,
+    lr: float = 3e-4,
+    n_wall_target: float = 5.0,
+    n_passage_target: float = 1.0,
+) -> List[float]:
+    """
+    Jumpstart curriculum (PLANNING_AUDIT.md fix C).
+
+    Pretrain the maze encoder so that n(x) is wall-vs-passage discriminative
+    BEFORE the Eikonal-loop loss is enabled. Without this step, the encoder
+    starts as a near-flat field and the path-distance loss has zero gradient
+    on most wall pixels (audit "WaveBrain Flat-Field Persistence", April 2026).
+
+    Target:  n_target = wall_target on walls, passage_target on passages.
+    Loss:    MSE(n, n_target).
+    """
+    model.train()
+    opt = torch.optim.Adam(model.encoder.parameters(), lr=lr)
+    losses: List[float] = []
+    step = 0
+
+    print(f"\n=== Encoder Jumpstart ({n_steps} steps) ===")
+    while step < n_steps:
+        for batch in train_loader:
+            mazes = batch["maze"].to(device)
+            n = model.encoder(mazes)
+            n_target = torch.where(
+                mazes[:, 0] < 0.5,
+                torch.full_like(n, n_wall_target),
+                torch.full_like(n, n_passage_target),
+            )
+            loss = F.mse_loss(n, n_target)
+            opt.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.encoder.parameters(), 1.0)
+            opt.step()
+            losses.append(loss.item())
+            step += 1
+            if step >= n_steps:
+                break
+        if step % 50 == 0 and step > 0:
+            print(f"  pretrain step {step}/{n_steps}  mse={losses[-1]:.4f}")
+    print(f"  final encoder mse: {losses[-1]:.4f}")
+    return losses
 
 
 def train_epoch(
@@ -350,7 +415,7 @@ def train_epoch(
         batch_loss = 0.0
         for i in range(len(mazes)):
             loss_i = path_distance_loss(
-                u[i:i+1], mazes[i:i+1], paths[i], source, target
+                n[i:i+1], u[i:i+1], mazes[i:i+1], paths[i], source, target
             )
             batch_loss = batch_loss + loss_i
         batch_loss = batch_loss / len(mazes)
@@ -398,10 +463,17 @@ def evaluate(
         
         # Check if path was found
         if extracted_path and len(extracted_path) > 0:
-            path_found_count += 1
+            # check if path crosses any walls
+            path_valid = True
+            for py, px in extracted_path:
+                if mazes[0, 0, int(py), int(px)] < 0.5:
+                    path_valid = False
+                    break
+            if path_valid:
+                path_found_count += 1
         
         # Compute loss
-        loss = path_distance_loss(u, mazes[:1], paths[0], source, target)
+        loss = path_distance_loss(n, u, mazes[:1], paths[0], source, target)
         total_loss += loss.item()
         n_samples += 1
         
@@ -429,6 +501,9 @@ def main():
     parser.add_argument("--n-train", type=int, default=500)
     parser.add_argument("--n-test", type=int, default=100)
     parser.add_argument("--n-sweeps", type=int, default=8)
+    parser.add_argument("--jumpstart-steps", type=int, default=500,
+                        help="Encoder MSE pretraining steps before Eikonal loss "
+                             "(PLANNING_AUDIT fix C). 0 disables.")
     parser.add_argument("--output-dir", type=str, default="./outputs/wave_brain")
     parser.add_argument("--visualize", action="store_true")
     
@@ -480,7 +555,15 @@ def main():
     # Optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
-    
+
+    # PLANNING_AUDIT.md fix C: jumpstart curriculum -- the encoder must see
+    # walls *before* the Eikonal loss runs, otherwise its gradient is zero
+    # almost everywhere and training stalls in the flat-field regime.
+    if args.jumpstart_steps > 0:
+        pretrain_encoder_mse(
+            model, train_loader, device, n_steps=args.jumpstart_steps
+        )
+
     # Training loop
     print("\n=== Training ===")
     best_loss = float('inf')

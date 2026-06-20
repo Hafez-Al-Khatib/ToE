@@ -145,15 +145,17 @@ class LatentHKAN(nn.Module):
     2. KAN Energy: E(z) (reasoning/logic)
     3. Hamiltonian dynamics in latent space
     
+    Architectural Philosophy
+    ------------------------
+    - **Encoder**: Strictly for **Dimensionality Reduction** (Compression). It acts as the "Retina," mapping messy high-dimensional pixels to a compact latent manifold. It does NOT "do the thinking."
+    - **KAN / Hamiltonian Dynamics**: This is where the **"Thinking" (Inference)** happens. The KAN learns the energy landscape (memories/logic) in the latent space, and the Hamiltonian dynamics navigate this landscape to solve problems.
+    
     Memory Comparison
     -----------------
     Direct KAN on pixels: 784 × 512 × (8 + 3) ≈ 4.4M parameters
     Latent KAN:           16 × 32 × (8 + 3) ≈ 5.6K parameters
     
     That's ~800x fewer parameters in the KAN layer!
-    
-    The encoder adds ~100K parameters, but that's still far less than
-    the 4.4M we'd need for a direct pixel KAN.
     """
     
     def __init__(

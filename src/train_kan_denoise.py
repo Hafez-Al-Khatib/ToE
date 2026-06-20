@@ -6,7 +6,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, "./src")
-from hamiltonian_field import HamiltonianField
+from predictive_coding_field import PredictiveCodingField
 # import torchvision # Broken in this env
 # import torchvision.transforms as transforms
 
@@ -55,7 +55,7 @@ def train_kan_denoise():
     # 2. Model: Hamiltonian KAN
     # Single Channel (Grayscale) -> Energy
     # n_filters=16 -> KAN Input=16
-    model = HamiltonianField(
+    model = PredictiveCodingField(
         n_channels=1, 
         height=28, 
         width=28, 

@@ -49,6 +49,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional
 import math
+from kan import KAN
 
 
 class ThermodynamicField(nn.Module):
@@ -71,7 +72,8 @@ class ThermodynamicField(nn.Module):
         width: int = 28,
         n_filters: int = 16,
         filter_size: int = 5,
-        dynamics_mode: Optional[list] = None
+        dynamics_mode: Optional[list] = None,
+        kan_hidden: Optional[list] = None
     ):
         """
         Parameters
@@ -105,12 +107,22 @@ class ThermodynamicField(nn.Module):
             for _ in range(n_channels)
         ])
         
-        # === LEARNED: Polynomial potential V(u) = a*u² + b*u⁴ ===
-        # Per-channel coefficients. Fully differentiable (no spline indexing).
-        # a > 0, b > 0 → single well (prefers u=0)
-        # a < 0, b > 0 → double well (prefers u=±√(-a/2b))
-        self.potential_a = nn.Parameter(torch.ones(n_channels) * 0.1)   # quadratic
-        self.potential_b = nn.Parameter(torch.ones(n_channels) * 0.01)  # quartic
+        # === LEARNED: KAN Potential V_KAN(u) ===
+        # Replaces simple polynomial a*u^2 + b*u^4 with a specialized B-Spline network.
+        # This acts as the "Memory" of the system, learning complex energy landscapes.
+        # Input: n_channels (vector of field values at a pixel). Output: 1 (Energy density).
+        if kan_hidden is None:
+            kan_hidden = [16]
+            
+        self.potential_kan = KAN(
+            layers_hidden=[n_channels] + kan_hidden + [1],
+            grid_size=5,
+            spline_order=3,
+            scale_noise=0.2, # Stronger initial gradients
+            scale_base=1.0,
+            scale_spline=1.0,
+        )
+        # Note: We remove potential_a and potential_b parameters
         
         # === LEARNED: Diffusion coefficients (Turing: slow activator, fast inhibitor) ===
         initial_alphas = torch.zeros(n_channels)
@@ -138,7 +150,8 @@ class ThermodynamicField(nn.Module):
         
         # === LEARNED: Inference step size and data weight ===
         self.log_step_size = nn.Parameter(torch.tensor(-1.0))  # exp(-1) ≈ 0.37
-        self.log_data_weight = nn.Parameter(torch.tensor(-2.0))  # exp(-2) ≈ 0.14
+        self.log_data_weight = nn.Parameter(torch.tensor(-5.0))  # exp(-5) ≈ 0.0067 (Was -2.0)
+        # Lower data weight forces system to rely on Physics (KAN) initially.
     
     @property
     def alphas(self):
@@ -214,9 +227,20 @@ class ThermodynamicField(nn.Module):
                                        grad_y.pow(2).sum(dim=(1,2,3)))
             energy = energy + grad_energy
             
-            # --- Polynomial potential: aᵢ uᵢ² + bᵢ uᵢ⁴ ---
-            pot = self.potential_a[i] * u_i.pow(2) + self.potential_b[i] * u_i.pow(4)
-            energy = energy + pot.sum(dim=(1, 2, 3))
+            # --- Polynomial potential REMOVED (Handled by KAN below) ---
+            # pot = self.potential_a[i] * u_i.pow(2) + self.potential_b[i] * u_i.pow(4)
+            # energy = energy + pot.sum(dim=(1, 2, 3))
+        # --- KAN Potential: V(u) ---
+        # Reshape fields to (B*H*W, C)
+        # fields: (B, C, H, W) -> (B, H, W, C) -> (N, C)
+        fields_flat = fields.permute(0, 2, 3, 1).reshape(-1, C)
+        
+        # Compute V(u) via KAN
+        # kan(x) output shape: (B*H*W, 1)
+        pot_flat = self.potential_kan(fields_flat)
+        pot_per_sample = pot_flat.view(B, H, W).sum(dim=(1, 2))
+        
+        energy = energy + pot_per_sample
         
         # --- Bilinear coupling: cᵢⱼ ∫ uᵢ · uⱼ ---
         idx = 0

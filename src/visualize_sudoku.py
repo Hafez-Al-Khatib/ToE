@@ -8,7 +8,7 @@ import random
 import sys
 
 sys.path.insert(0, "./src")
-from hamiltonian_field import HamiltonianField
+from predictive_coding_field import PredictiveCodingField
 
 # --- Sudoku Generator (Copy-Paste for simplicity) ---
 class SudokuGenerator:
@@ -43,7 +43,7 @@ def visualize_sudoku():
     print(f"Visualizing on {device}")
     
     # Load Model
-    model = HamiltonianField(
+    model = PredictiveCodingField(
         n_channels=9,
         height=9,
         width=9,
