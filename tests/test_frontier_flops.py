@@ -24,9 +24,11 @@ def test_flops_matches_analytic_linear():
     D = 3 * 32 * 32
     model = DummyLinearEBM(D)
     got = flops_per_step(model, torch.device('cpu'))
-    # forward mm: 2*D; backward (grad_input + grad_weight): 2 more mms, 2*D each.
-    expected = 6 * D
-    assert abs(got - expected) <= 2 * D, f"got {got}, expected ~{expected}"
+    # forward mm: 2*D; backward computes ONLY grad_input (one mm, 2*D) --
+    # autograd.grad(E, xi) never forms grad_weight. Inference descent
+    # therefore costs ~2x forward, not the 3x training heuristic.
+    expected = 4 * D
+    assert abs(got - expected) <= 0.05 * expected, f"got {got}, expected {expected}"
 
 
 def test_flops_positive_for_repo_model_shape():
