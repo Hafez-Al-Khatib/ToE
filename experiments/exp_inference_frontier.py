@@ -6,6 +6,14 @@ Sweep phase writes resumable part files; --analyze consolidates them into
 outputs/inference_frontier/frontier.json + frontier.png and prints the
 pre-registered verdict (primary pair: kan_32k vs kan_110k).
 
+Models: kan_110k, kan_32k, conv_mlp_gelu, unet. 'unet' FLOP counting hits a
+torch 2.5.1 FlopCounterMode/autograd.grad bug on UNetEBM's backward graph
+(see frontier_flops.py docstring and .superpowers/sdd/task-3-report.md);
+frontier_flops.flops_per_step_detail() transparently falls back to
+forward-only-measurement x2 for any model that trips this bug, so 'unet'
+stays in the sweep. Check 'flops_method' ('measured' vs 'forward_x2') in
+each part file / frontier.json meta entry to see which path was used.
+
 Run (sweep, GPU):   py -3.12 experiments/exp_inference_frontier.py --device cuda
 Run (smoke, CPU):   py -3.12 experiments/exp_inference_frontier.py --quick --device cpu
 Run (analysis):     py -3.12 experiments/exp_inference_frontier.py --analyze
@@ -29,7 +37,7 @@ sys.path.insert(0, str(ROOT / 'experiments'))
 from exp_fine_grid_kstar import sequential_denoise_record
 from exp_scaled_eval_cifar10 import load_kan, load_conv_mlp
 from exp_unet_ebm import UNetEBM
-from frontier_flops import flops_per_step
+from frontier_flops import flops_per_step_detail
 from frontier_analysis import curve_from_psnr, evaluate_pass
 
 OUT_DIR = ROOT / 'outputs' / 'inference_frontier'
@@ -54,16 +62,19 @@ def load_unet_ebm(path, device):
 def model_registry(device):
     """name -> (loader lambda). Params strictly ordered for the primary pair.
 
-    NOTE: 'unet' is intentionally excluded. UNetEBM's MaxPool2d ->
-    ConvTranspose2d backward graph triggers a torch 2.5.1
-    FlopCounterMode/autograd interaction bug ("A leaf node was passed to
+    NOTE: 'unet' FLOP measurement hits a torch 2.5.1 FlopCounterMode/
+    autograd interaction bug ("A leaf node was passed to
     _will_engine_execute_node but we are currently running autograd.grad()")
-    inside frontier_flops.flops_per_step, independent of this script's
-    logic (plain torch.autograd.grad on the same model works fine; only
-    wrapping it in FlopCounterMode fails). Minimal repro confirmed with a
-    bare conv->maxpool->conv_transpose->conv module. Per spec contingency,
-    'unet' is dropped from the registry; the kan_32k-vs-unet secondary pair
-    is skipped by `analyze()`'s existence check.
+    on UNetEBM's MaxPool2d -> ConvTranspose2d backward graph when the full
+    forward+backward is measured inside a single FlopCounterMode block.
+    Plain torch.autograd.grad on the same model works fine (confirmed via
+    minimal repro); only wrapping it in FlopCounterMode fails. Rather than
+    dropping 'unet' from the registry, frontier_flops.flops_per_step_detail
+    now falls back to forward-only measurement x2 (validated FLOP identity:
+    total = forward + grad_input-backward approx= 2x forward) whenever the
+    full measurement raises RuntimeError, so 'unet' is included here with
+    its flops accounted via that fallback (see 'flops_method' in each part
+    file / meta entry).
     """
     return {
         'kan_110k': lambda: load_kan(ROOT / 'outputs/cifar10/kan_ebm_f32.pt',
@@ -73,6 +84,8 @@ def model_registry(device):
             device, n_filters=16, kan_hidden=[48, 16]),
         'conv_mlp_gelu': lambda: load_conv_mlp(
             ROOT / 'outputs/finalization/rebuttal/conv_mlp_gelu.pt', device),
+        'unet': lambda: load_unet_ebm(ROOT / 'outputs/unet_ebm/unet_ebm.pt',
+                                      device),
     }
 
 
@@ -135,9 +148,11 @@ def sweep(args, device):
     for name in names:
         model = registry[name]()
         n_params = sum(p.numel() for p in model.parameters())
-        fps = flops_per_step(model, device)
+        detail = flops_per_step_detail(model, device)
+        fps = detail['total']
         print(f"[model] {name}: {n_params:,} params, "
-              f"{fps / 1e6:.1f} MFLOPs/step/image")
+              f"{fps / 1e6:.1f} MFLOPs/step/image "
+              f"(flops_method={detail['method']})")
         images = load_test_images(args.n_images)
         for seed in seeds:
             for sigma in sigmas:
@@ -149,7 +164,9 @@ def sweep(args, device):
                 payload = run_cell(model, images, sigma, seed, args.k_max,
                                    device)
                 payload.update({'model': name, 'n_params': n_params,
-                                'flops_step': fps, 'done': True})
+                                'flops_step': fps,
+                                'flops_method': detail['method'],
+                                'done': True})
                 part.write_text(json.dumps(payload))
                 print(f"  [done] {part.name}  ({time.time() - t0:.0f}s, "
                       f"K*mean={np.mean(payload['kstar_per_image']):.1f})")
@@ -167,6 +184,7 @@ def analyze(args):
         m = d['model']
         results.setdefault(m, {}).setdefault(d['sigma'], {})[d['seed']] = d
         meta[m] = {'n_params': d['n_params'], 'flops_step': d['flops_step'],
+                   'flops_method': d.get('flops_method', 'measured'),
                    'ms_per_step_per_image': d['ms_per_step_per_image']}
     if not results:
         print("[analyze] no completed parts found"); return
