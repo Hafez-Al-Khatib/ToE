@@ -232,8 +232,11 @@ def analyze(args):
                       'n_images': N_IMAGES, 'seeds': SEEDS,
                       'dt': 0.05, 'dt_decay': 0.97,
                       'flop_convention':
-                          'forward+backward per step, matmul/conv only, '
-                          'FlopCounterMode'},
+                          'per step = one energy forward + input-gradient backward; '
+                          'matmul/conv FLOPs via FlopCounterMode; '
+                          'per-model method in meta[<model>].flops_method: "measured" '
+                          '(counted directly) or "forward_x2" '
+                          '(2 x forward-only count; validated ratio 2.0 on measured heads)'},
          'results': results}, indent=1))
     print(f"[analyze] wrote {OUT_DIR / 'frontier.json'} and frontier.png")
 

@@ -41,10 +41,11 @@ def flops_per_step_detail(model, device, img_shape=(3, 32, 32)):
 
     Tries the full forward+backward measurement inside a single
     FlopCounterMode block first ('measured'). If that raises RuntimeError
-    (torch 2.5.1 FlopCounterMode/autograd.grad bug on some backward graphs,
-    see module docstring), falls back to measuring forward-only FLOPs and
-    reporting total = 2 * forward ('forward_x2'), per the validated
-    forward-backward-input-gradient FLOP identity.
+    with the specific torch 2.5.1 FlopCounterMode/autograd.grad bug signature
+    '_will_engine_execute_node' (see module docstring), falls back to measuring
+    forward-only FLOPs and reporting total = 2 * forward ('forward_x2'), per
+    the validated forward-backward-input-gradient FLOP identity. Any other
+    RuntimeError is re-raised immediately.
     """
     model = model.to(device)
     x = torch.randn(1, *img_shape, device=device)
@@ -60,7 +61,9 @@ def flops_per_step_detail(model, device, img_shape=(3, 32, 32)):
             torch.autograd.grad(E, xi)
         total = int(counter.get_total_flops())
         return {'total': total, 'forward': forward_flops, 'method': 'measured'}
-    except RuntimeError:
+    except RuntimeError as e:
+        if '_will_engine_execute_node' not in str(e):
+            raise
         total = 2 * forward_flops
         return {'total': total, 'forward': forward_flops, 'method': 'forward_x2'}
 

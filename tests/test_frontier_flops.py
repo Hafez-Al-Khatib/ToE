@@ -58,9 +58,9 @@ def test_flops_per_step_detail_measured_path():
 
 def test_flops_per_step_detail_fallback_path(monkeypatch):
     """When the full forward+backward measurement raises RuntimeError
-    (simulating the torch 2.5.1 FlopCounterMode/autograd.grad bug on
-    certain backward graphs, e.g. UNetEBM), flops_per_step_detail must
-    fall back to forward-only-measurement x2."""
+    with the specific torch 2.5.1 FlopCounterMode/autograd.grad bug signature
+    '_will_engine_execute_node' (simulating certain backward graphs, e.g.
+    UNetEBM), flops_per_step_detail must fall back to forward-only-measurement x2."""
     D = 3 * 32 * 32
     model = DummyLinearEBM(D)
 
@@ -76,3 +76,19 @@ def test_flops_per_step_detail_fallback_path(monkeypatch):
 
     assert detail['method'] == 'forward_x2'
     assert detail['total'] == 2 * detail['forward']
+
+
+def test_flops_per_step_detail_unrelated_error_reraises(monkeypatch):
+    """When the full forward+backward measurement raises RuntimeError
+    with a signature other than '_will_engine_execute_node' (some unrelated
+    failure), flops_per_step_detail must re-raise instead of falling back."""
+    D = 3 * 32 * 32
+    model = DummyLinearEBM(D)
+
+    def _raising_grad(*args, **kwargs):
+        raise RuntimeError('some unrelated failure')
+
+    monkeypatch.setattr(frontier_flops.torch.autograd, 'grad', _raising_grad)
+
+    with pytest.raises(RuntimeError, match='some unrelated failure'):
+        flops_per_step_detail(model, torch.device('cpu'))
