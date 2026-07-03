@@ -39,6 +39,7 @@ from exp_scaled_eval_cifar10 import load_kan, load_conv_mlp
 from exp_unet_ebm import UNetEBM
 from frontier_flops import flops_per_step_detail
 from frontier_analysis import curve_from_psnr, evaluate_pass
+from group_kan import GroupKANEnergyModel
 
 OUT_DIR = ROOT / 'outputs' / 'inference_frontier'
 PARTS = OUT_DIR / 'parts'
@@ -53,6 +54,14 @@ BATCH = 100
 
 def load_unet_ebm(path, device):
     model = UNetEBM().to(device)
+    model.load_state_dict(torch.load(path, map_location=device,
+                                     weights_only=False))
+    model.eval()
+    return model
+
+
+def _load_group_kan(path, device, hidden):
+    model = GroupKANEnergyModel(hidden=hidden).to(device)
     model.load_state_dict(torch.load(path, map_location=device,
                                      weights_only=False))
     model.eval()
@@ -86,6 +95,10 @@ def model_registry(device):
             ROOT / 'outputs/finalization/rebuttal/conv_mlp_gelu.pt', device),
         'unet': lambda: load_unet_ebm(ROOT / 'outputs/unet_ebm/unet_ebm.pt',
                                       device),
+        'group_kan_8k': lambda: _load_group_kan(
+            ROOT / 'outputs/group_kan/group_kan_8k.pt', device, hidden=136),
+        'group_kan_32k': lambda: _load_group_kan(
+            ROOT / 'outputs/group_kan/group_kan_32k.pt', device, hidden=640),
     }
 
 
