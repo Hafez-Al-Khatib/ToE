@@ -54,19 +54,24 @@ def main():
 
     summary = {'tag': args.tag, 'n_params': model.n_params,
                'sigmas': SIGMAS, 'per_sigma': {}}
-    K_means = []
-    for sigma in SIGMAS:
-        stacked = []
-        for s in range(args.n_seeds):
-            torch.manual_seed(SEED + s * 100)
-            np.random.seed(SEED + s * 100)
+
+    per_seed = {}
+    for s in range(args.n_seeds):
+        torch.manual_seed(SEED + s * 100)
+        np.random.seed(SEED + s * 100)
+        per_seed[s] = {}
+        for sigma in SIGMAS:
             per_step = []
             for b in range(0, len(images), args.batch):
                 batch = images[b:b + args.batch].to(device)
                 per_step.append(evaluate_fine_grid(model, batch, sigma,
                                                    args.k_max))
-            stacked.append(np.concatenate(per_step, axis=1))
-        mean_psnr = np.stack(stacked, axis=0).mean(axis=0)  # (K, n_img)
+            per_seed[s][sigma] = np.concatenate(per_step, axis=1)
+
+    K_means = []
+    for sigma in SIGMAS:
+        mean_psnr = np.stack([per_seed[s][sigma]
+                              for s in range(args.n_seeds)], axis=0).mean(axis=0)  # (K, n_img)
         kstar = np.argmax(mean_psnr, axis=0) + 1
         lo, hi = bootstrap_ci_kstar(kstar)
         K_means.append(float(np.mean(kstar)))
