@@ -78,7 +78,7 @@ for yi, m, s, c in zip(y, means, stds, cols):
     ax2.plot(m, yi, "o", color=c, ms=8, zorder=4)
 ax2.set_yticks(y); ax2.set_yticklabels(names, fontsize=8)
 ax2.set_xlabel(r"fitted exponent $\alpha$ (mean $\pm$ std, 3 seeds)")
-ax2.set_title(r"(b) $\alpha$ is identical across all models")
+ax2.set_title(r"(b) $\alpha$ indistinguishable across models ($F=0.79$)")
 ax2.set_xlim(1.30, 1.45)
 ax2.legend(fontsize=8, frameon=False, loc="lower right")
 ax2.grid(True, axis="x", alpha=0.2)
