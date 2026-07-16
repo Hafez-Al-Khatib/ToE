@@ -1,9 +1,28 @@
-# Remote Run: Inference Frontier + GroupKAN (lab 4090)
+# Remote Run: Inference Frontier + GroupKAN (Colab or lab 4090)
 
 One batch generates all remaining experimental data for the paper_v8 AAAI
-extension. Everything is resumable — if anything dies, just re-run step 4.
+extension. Everything is resumable — if anything dies, just re-run.
 
-## 1. On the lab machine: clone the branch
+## Option A (recommended): Google Colab — zero setup
+
+Open `colab_run.ipynb` in Colab and `Runtime > Run all` on a GPU runtime:
+
+    https://colab.research.google.com/github/Hafez-Al-Khatib/ToE/blob/feature/hamiltonian-kan/colab_run.ipynb
+
+(If the repo is private, upload `colab_run.ipynb` to Colab manually instead.)
+
+The notebook clones this branch, extracts the committed checkpoint tarball,
+symlinks `outputs/` onto your Google Drive (so completed sweep cells survive
+runtime disconnects), runs `scripts/remote_run.sh`, and packages
+`results_back.tar.gz` for download (with a backup copy in Drive root).
+After any disconnect, just Run all again — nothing is redone.
+
+GPU guidance: A100 ~1–3 h, L4 ~2–6 h, T4 ~4–10 h (free tier may need 2–3
+sessions; the Drive-backed resume makes that fine).
+
+## Option B: lab machine with a CUDA GPU
+
+### 1. On the lab machine: clone the branch
 
 ```bash
 git clone -b feature/hamiltonian-kan https://github.com/Hafez-Al-Khatib/ToE.git
@@ -11,21 +30,16 @@ cd ToE
 pip install lpips   # torch+CUDA, torchvision, numpy, matplotlib assumed present
 ```
 
-## 2. Copy the pretrained checkpoints over (they are git-ignored)
+### 2. Extract the pretrained checkpoints
 
-From the Windows machine (repo root has `remote_checkpoints.tar.gz`, ~1.7 MB):
-
-```bash
-scp "remote_checkpoints.tar.gz" <user>@<lab-host>:~/ToE/
-```
-
-On the lab machine, extract at the repo root (paths are preserved):
+`remote_checkpoints.tar.gz` (~1.5 MB) is committed on this branch, so the
+clone already has it. Extract at the repo root (paths are preserved):
 
 ```bash
 cd ~/ToE && tar xzf remote_checkpoints.tar.gz
 ```
 
-## 3. What will run (in order, ~1-3 h total on a 4090)
+### 3. What will run (in order, ~1-3 h total on a 4090)
 
 1. Train GroupKAN heads (8K + 32K params, 40 epochs, matched recipe).
 2. Frontier sweep: 6 models x 5 noise levels x 2 seeds = 60 cells,
@@ -34,14 +48,14 @@ cd ~/ToE && tar xzf remote_checkpoints.tar.gz
 3. GroupKAN fine-grid K* sweeps (the alpha table rows; 3 seeds each).
 4. LPIPS secondary metric at each model's best step count.
 
-## 4. Run it (inside tmux/screen or nohup so SSH drops don't kill it)
+### 4. Run it (inside tmux/screen or nohup so SSH drops don't kill it)
 
 ```bash
 nohup bash scripts/remote_run.sh > remote_run_console.log 2>&1 &
 tail -f remote_run.log
 ```
 
-## 5. Copy results back
+### 5. Copy results back
 
 On the lab machine:
 
