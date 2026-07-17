@@ -63,7 +63,8 @@ for attempt in $(seq 1 12); do
   n=$(count_done)
   echo "[remote] sweep attempt $attempt, parts done: $n/60" | tee -a "$LOG"
   [ "$n" -ge 60 ] && break
-  timeout -k 30 2700 $PY experiments/exp_inference_frontier.py --device cuda 2>&1 | tee -a "$LOG"
+  timeout -k 30 2700 $PY experiments/exp_inference_frontier.py --device cuda \
+    --models kan_110k kan_32k conv_mlp_gelu unet group_kan_8k group_kan_32k 2>&1 | tee -a "$LOG"
 done
 clean_truncated
 echo "[remote] sweep finished with $(count_done)/60 parts" | tee -a "$LOG"

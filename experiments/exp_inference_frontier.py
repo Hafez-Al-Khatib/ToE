@@ -85,7 +85,16 @@ def model_registry(device):
     its flops accounted via that fallback (see 'flops_method' in each part
     file / meta entry).
     """
-    return {
+    def _load_ladder(path, hidden):
+        from rebuttal_smooth_mlp import ConvSmoothMLPEBM
+        m = ConvSmoothMLPEBM(n_filters=16, mlp_hidden=hidden,
+                             activation='gelu').to(device)
+        m.load_state_dict(torch.load(path, map_location=device,
+                                     weights_only=True))
+        m.eval()
+        return m
+
+    reg = {
         'kan_110k': lambda: load_kan(ROOT / 'outputs/cifar10/kan_ebm_f32.pt',
                                      device, n_filters=32, kan_hidden=[96, 16]),
         'kan_32k': lambda: load_kan(
@@ -100,6 +109,22 @@ def model_registry(device):
         'group_kan_32k': lambda: _load_group_kan(
             ROOT / 'outputs/group_kan/group_kan_32k.pt', device, hidden=640),
     }
+    # Batch-v2 additions (panel R1-W4 replication + scale ladder). Same
+    # matched recipe as train_group_kan.py; trained by
+    # train_replication_ladder.py. Registered unconditionally; loading
+    # fails loudly if the checkpoint is absent.
+    kan_sizes = {'kan_32k': dict(n_filters=16, kan_hidden=[48, 16]),
+                 'kan_110k': dict(n_filters=32, kan_hidden=[96, 16])}
+    for _tag, _kw in kan_sizes.items():
+        for _ts in (1, 2):
+            reg[f'{_tag}_ts{_ts}'] = (
+                lambda t=_tag, k=_kw, s=_ts: load_kan(
+                    ROOT / f'outputs/replication/{t}_ts{s}.pt', device, **k))
+    for _tag, _hidden in {'ladder_1m': 1000, 'ladder_8m': 2800,
+                          'ladder_30m': 5450}.items():
+        reg[_tag] = (lambda t=_tag, h=_hidden: _load_ladder(
+            ROOT / f'outputs/scale_ladder/{t}.pt', h))
+    return reg
 
 
 def load_test_images(n):
