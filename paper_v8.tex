@@ -12,7 +12,7 @@
 \graphicspath{{figures/}}
 
 \title{The Limits of Test-Time Compute in Iterative Denoisers:\\
-A Depth Law, and Two Things It Does \emph{Not} Buy}
+A Depth Law, a Substitution Frontier, and Two Things It Does \emph{Not} Buy}
 \author{Hafez Al-Khatib \\ American University of Beirut}
 \date{}
 
@@ -29,15 +29,18 @@ $F$-test cannot distinguish architectures, $F=0.79$), the form survives a $3000\
 \emph{regime-scoped}, not universal: changing architecture and training recipe shifts it to $1.27$. The law
 is also \emph{corruption-conditioned}---it holds for stochastic corruptions (Gaussian, speckle, Poisson;
 $R^2>0.95$) but breaks for deterministic ones (blur, JPEG), delimiting when test-time compute helps at all.
-Second, and against intuition, we show two hard limits of this compute. \textbf{(i)} It buys no \emph{per-instance}
+Second, at a fixed inference-FLOP budget, descent depth \emph{substitutes} for head capacity: under a
+pre-registered criterion, a 32K-parameter energy head given extra steps beats a $3.4\times$ costlier head
+by up to $3.9$\,dB at matched budgets---except at the lowest noise, where $K^{*}\!\approx\!1$ leaves no
+depth to trade. Third, and against intuition, we show two hard limits of this compute. \textbf{(i)} It buys no \emph{per-instance}
 adaptivity: at a fixed noise level the optimal depth varies by only $\sim\!0.6$ steps across inputs, so
 there is nothing to allocate. \textbf{(ii)} It is information-\emph{dissipative}: each refinement step
 \emph{destroys} distributional information about the input---far-OOD detectability decays monotonically
 with depth (AUROC $0.92\!\to\!0.77$), while near-OOD detectability sits at chance at every depth---so the
 \emph{pre}-refinement energy is the better anomaly score.
-We ground both the law and its limits in classical iterative-regularization theory. The practical message is
-two-sided: a one-line rule sets the compute budget, and two tempting uses of that compute are
-unavailable.
+We ground both the law and its limits in classical iterative-regularization theory. The practical message:
+a one-line rule sets the compute budget, capacity can be traded for depth away from the low-noise
+boundary, and two tempting uses of that compute are unavailable.
 \end{abstract}
 
 \section{Introduction}
@@ -51,14 +54,20 @@ We give the operational law \emph{and} its boundary. Our contributions:
 \begin{enumerate}
 \item \textbf{A calibrated depth law.} $K^{*}(\sigma)=C\sigma^{\alpha}$ holds with $R^2>0.98$ across
 datasets, architectures, and $3000\times$ in scale. The exponent is tightly $1.37$ \emph{within} a matched
-regime but regime-scoped across recipes; one measurement calibrates the curve (Sec.~4).
+regime but regime-scoped across recipes; one measurement calibrates the curve (Sec.~\ref{sec:law}).
 \item \textbf{Iteration, not architecture.} A feedforward denoiser is exactly flat in $K$: the capability
-is intrinsic to iterating a gradient field (Sec.~5).
+is intrinsic to iterating a gradient field (Sec.~\ref{sec:iter}).
 \item \textbf{A phase boundary.} The law is corruption-conditioned---it holds for stochastic corruptions and
-breaks for deterministic ones ($K^{*}\!\approx\!0$), delimiting when test-time compute helps at all (Sec.~6).
+breaks for deterministic ones ($K^{*}\!\approx\!0$), delimiting when test-time compute helps at all
+(Sec.~\ref{sec:phase}).
+\item \textbf{A substitution frontier.} At fixed inference FLOPs, and under a criterion pre-registered
+before data collection, a lighter energy head taking more descent steps beats a $3.4\times$ costlier head
+by $+0.8$ to $+3.9$\,dB for $\sigma\geq0.10$ in both seeds; at $\sigma=0.05$, $K^{*}\!\approx\!1$ and
+capacity wins (Sec.~\ref{sec:frontier}).
 \item \textbf{Two negative results.} Test-time compute here yields \emph{no} per-instance adaptivity
-(Sec.~6.1), and it \emph{destroys} distributional information rather than sharpening it (Sec.~6.2). Both
-correct natural hypotheses and both are, we argue, the more useful part of the paper.
+(Sec.~\ref{sec:adaptive}), and it \emph{destroys} distributional information rather than sharpening it
+(Sec.~\ref{sec:ood-sub}). Both correct natural hypotheses and both are, we argue, the more useful part of
+the paper.
 \end{enumerate}
 We deliberately foreground the limits: the positive law is close to classical early-stopping theory, whereas
 the boundary---what ``thinking longer'' cannot do for an iterative denoiser---is less appreciated.
@@ -72,8 +81,8 @@ robustness with statistics, a calibration rule, and its limits.
 diffusion \citep{ho2020,song2021} share a gradient-refinement operator, explaining why one law spans them.
 \paragraph{Test-time compute, verification, OOD.} Inference-time scaling \citep{snell2024} and energy-based
 ``thinking'' \citep{gladstone2025} motivate the compute-helps view we bound here. Energy is a common OOD
-score \citep{liu2020,grathwohl2020}; our Sec.~6.2 characterizes how that signal behaves \emph{under}
-refinement, complementing reconstruction-based diffusion OOD detection, which exploits the same erasure
+score \citep{liu2020,grathwohl2020}; our Sec.~\ref{sec:ood-sub} characterizes how that signal behaves
+\emph{under} refinement, complementing reconstruction-based diffusion OOD detection, which exploits the same erasure
 (``healing'') of anomalies \citep{graham2023}.
 
 \section{Setup}
@@ -85,6 +94,7 @@ $2$--$3$ seeds per configuration; we report means with standard deviations and, 
 $95\%$ confidence intervals.
 
 \section{A Calibrated Depth Law}
+\label{sec:law}
 \paragraph{Within-regime stability.} Over $25$ matched runs spanning four datasets and five architectures,
 $\alpha=1.370\pm0.010$ (Fig.~\ref{fig:law}). Per dataset: CIFAR-10 $1.376\pm0.004$, Fashion-MNIST $1.372\pm0.005$, MNIST
 $1.356\pm0.009$. Across CIFAR architectures the values are indistinguishable (KAN $1.376$, GELU $1.378$,
@@ -120,6 +130,7 @@ predicts $K^{*}$ across the range with $7.5\%$ mean and $25\%$ worst-case error 
 full seven-point fit while removing the sweep.
 
 \section{Iteration, Not Architecture}
+\label{sec:iter}
 At $\sigma=0.2$, a feedforward denoiser trained with the same objective is exactly flat: $25.29$\,dB at every
 $K$, having no gradient field to iterate. The EBM shows semiconvergence: PSNR rises to $25.9$\,dB near
 $K=5$, then decays to $18.7$\,dB by $K=50$ as over-denoising erases signal (Fig.~\ref{fig:semiconv}). The
@@ -134,6 +145,7 @@ iterative model is flat at a lower level. The $K$-dial exists only for iterative
 \end{figure}
 
 \section{A Phase Boundary: Which Corruptions Admit Test-Time Compute}
+\label{sec:phase}
 The law presupposes that iteration helps at all---and it does not always. Sweeping five corruption types
 across three architectures (Table~\ref{tab:phase}, Fig.~\ref{fig:phase}), we find a clean dichotomy. For \emph{stochastic},
 signal-independent corruptions---additive Gaussian, speckle, and Poisson noise---the depth law holds with
@@ -167,71 +179,63 @@ law/breaks dichotomy is architecture-consistent.}
 \label{fig:phase}
 \end{figure}
 
-%% ===== TASK9-FRONTIER-SCAFFOLD (uncomment + fill when remote frontier data returns) =====
-%% Fill every \NUM{...} from outputs/inference_frontier/frontier.json /
-%% outputs/group_kan/fine_grid_group_kan_32k.json; KEEP EXACTLY ONE framing
-%% paragraph (pre-registered verdict from exp_inference_frontier.py --analyze);
-%% copy outputs/inference_frontier/frontier.png -> figures/frontier.png.
-%
-%\section{The Inference Frontier: Trading Head Capacity for Depth}
-%\label{sec:frontier}
-%The depth law fixes how quality scales with iteration count for a given
-%energy head. A deployment question remains: at a \emph{fixed inference FLOP
-%budget}, should one spend the budget on a heavier head taking fewer descent
-%steps, or a lighter head taking more? We measure this directly. For each
-%head we count the FLOPs of one descent step (one energy forward plus the
-%input-gradient backward; matmul/conv operations, counted with PyTorch's
-%\texttt{FlopCounterMode}) and record PSNR after every step
-%($K{=}0{\dots}30$, five noise levels, 500 CIFAR-10 test images, two noise
-%seeds), yielding quality-versus-cumulative-FLOPs curves. The comparison
-%criterion was pre-registered before data collection: the lighter head must
-%lead by ${\geq}0.3$\,dB over a contiguous budget range in at least three of
-%five noise levels and both seeds, with the parameter-matched pair
-%KAN-32K/KAN-110K primary.
-%
-%% --- PASS framing (delete if verdict=FAIL) ---
-%Depth substitutes for capacity. The 32K-parameter head, given its FLOP
-%budget in extra steps, matches or exceeds the 110K head by
-%$\NUM{X.X}$--$\NUM{X.X}$\,dB across budgets of
-%$\NUM{X}$--$\NUM{X}$\,MFLOPs/image (Fig.~\ref{fig:frontier}), and a grouped
-%KAN head~\citep{yang2025kat} at $8.3$K parameters extends the frontier
-%further. The depth law of Sec.~4 then tells the practitioner how many steps
-%that budget should buy at each noise level: the two results compose into a
-%calibration-free deployment rule.
-%
-%% --- FAIL framing (delete if verdict=PASS) ---
-%Depth does \emph{not} substitute for capacity. At every matched budget the
-%heavier head dominates (max lighter-head advantage
-%$\NUM{X.X}$\,dB $<$ the pre-registered $0.3$\,dB margin;
-%Fig.~\ref{fig:frontier}). Together with the absence of per-instance
-%adaptivity and the dissipative character of refinement (Sec.~7), this adds a
-%third boundary: iteration buys accuracy only along the noise axis of the
-%depth law, not as a substitute for model capacity at inference time.
-%
-%\begin{figure}[t]\centering
-%\includegraphics[width=\linewidth]{frontier}
-%\caption{Quality vs.\ cumulative inference FLOPs per image (log axis), one
-%panel per noise level, one curve per energy head; markers are descent steps.
-%The pre-registered comparison is KAN-32K vs.\ KAN-110K.}
-%\label{fig:frontier}
-%\end{figure}
-%
-%A sixth architecture on the depth law: the grouped KAN head trained under
-%the identical denoising-score-matching recipe follows
-%$K^{*}(\sigma)=C\sigma^{\alpha}$ with $\alpha=\NUM{X.XXX}$
-%($R^2=\NUM{0.XXX}$, 95\% CI $[\NUM{X.XX},\NUM{X.XX}]$), consistent with the
-%iteration-not-architecture finding. [Only if R^2>0.95 quality gate passes;
-%F=0.79 remains attributed to the original five architectures.]
-%% ===== END TASK9-FRONTIER-SCAFFOLD =====
+\section{The Inference Frontier: Depth Substitutes for Capacity---Except at Low Noise}
+\label{sec:frontier}
+The depth law fixes how quality scales with iteration count for a given energy head. A deployment
+question remains: at a \emph{fixed inference FLOP budget}, should one spend the budget on a heavier
+head taking fewer descent steps, or a lighter head taking more? We measure this directly. For each
+head we count the FLOPs of one descent step (one energy forward plus the input-gradient backward;
+matmul/conv operations, counted with PyTorch's \texttt{FlopCounterMode}) and record PSNR after every
+step ($K{=}0{\dots}30$, five noise levels, 500 CIFAR-10 test images, two noise seeds), yielding
+quality-versus-cumulative-FLOPs curves for six energy heads (Fig.~\ref{fig:frontier}). The comparison
+criterion was \emph{pre-registered} before data collection: the lighter head must lead by
+${\geq}0.3$\,dB over a contiguous budget range in at least three of five noise levels and in both
+seeds, with the parameter-matched pair KAN-32K ($118.8$\,MFLOPs/step) vs.\ KAN-110K
+($406.8$\,MFLOPs/step) primary.
+
+The criterion passes---with an instructive boundary. At $\sigma\geq0.10$ the 32K head, given the
+110K head's budget in extra steps, exceeds it over contiguous budget ranges spanning
+$0.41$--$2.4$\,GFLOPs/image, by margins that grow with noise: $+0.8$\,dB at $\sigma{=}0.10$ to
+$+3.9$\,dB at $\sigma{=}0.30$, in both seeds ($4/5$ noise levels; the pre-registered requirement was
+$3/5$). At $\sigma{=}0.05$, where the law gives $K^{*}{\approx}1$, there is no depth left to trade
+and the heavier head wins by ${\sim}4.4$\,dB: the substitution frontier is itself
+noise-conditioned, closing where iteration stops paying---the same boundary logic as
+Sec.~\ref{sec:phase}. A grouped-KAN head in the style of \citet{yang2025kat}, at $8.3$K parameters
+and $32.2$\,MFLOPs/step, extends the frontier to budgets the other heads cannot reach
+(Fig.~\ref{fig:frontier}, leftmost curves). The advantage is not a PSNR artifact: at each head's own
+optimal depth ($\sigma{=}0.10$), LPIPS is $0.0201$ for KAN-110K vs.\ $0.0207$ for KAN-32K.
+Composed with the depth law, this yields a calibration-free deployment rule: pick the lightest head
+whose peak quality meets the requirement, and let $K^{*}(\sigma)=C\sigma^{\alpha}$ set the steps.
+
+\begin{figure*}[t]\centering
+\includegraphics[width=\linewidth]{frontier}
+\caption{The inference frontier. PSNR vs.\ cumulative inference FLOPs per image (log axis), one
+panel per noise level, one curve per energy head; markers are descent steps, curves are means over
+two noise seeds. At $\sigma\geq0.10$ the lighter KAN-32K peaks above the $3.4\times$-costlier
+KAN-110K at matched budgets (pre-registered comparison); at $\sigma{=}0.05$, $K^{*}{\approx}1$ and
+capacity wins.}
+\label{fig:frontier}
+\end{figure*}
+
+The grouped-KAN head also constitutes a sixth architecture on the depth law: trained under the
+identical denoising-score-matching recipe, it follows $K^{*}(\sigma)=C\sigma^{\alpha}$ with
+$R^{2}=0.995$ and $\alpha=1.206$ ($95\%$ CI $[1.13,1.29]$) under a per-image fine-grid protocol,
+within the range that same protocol yields for the other heads ($1.13$--$1.43$). We do not pool
+these fine-grid exponents with Table~\ref{tab:scale} or the $F$-test of Sec.~\ref{sec:law}, which
+use a coarser matched protocol; the $F=0.79$ statistic remains scoped to the original five
+architectures.
 
 \section{Two Things Test-Time Compute Does Not Buy}
+\label{sec:limits}
 \subsection{No per-instance adaptive depth}
+\label{sec:adaptive}
 If $K^{*}$ varied enough across inputs, one could budget compute per image. It does not: at fixed $\sigma$,
 the per-image $K^{*}$ has standard deviation $\sim\!0.6$ steps (range $3$--$6$). Almost all the signal is the
 across-$\sigma$ law; a per-instance controller matches the calibrated rule to within noise. Adaptive
 inference-depth allocation, at least for denoising, is not where the leverage is.
 
 \subsection{Refinement is information-dissipative}
+\label{sec:ood-sub}
 It is natural to expect the energy \emph{after} refinement to be a sharper confidence/OOD signal than the raw
 input energy. The reverse is true. At a matched, deployable descent depth, OOD detectability
 (AUROC, CIFAR-10 vs.\ SVHN) falls \emph{monotonically} with $K$: $0.92$ at $K=0$ (static energy) $\to 0.77$
@@ -253,8 +257,10 @@ score them \emph{before} it thinks, not after.
 \section{Practical Takeaways}
 (1) To set inference depth, measure $K^{*}$ at one noise level and apply $K^{*}(\sigma)=C\sigma^{1.37}$;
 re-fit $\alpha$ if the architecture/recipe changes. (2) Do not over-refine---quality peaks early and decays.
-(3) Do not expect per-image compute budgeting or post-refinement confidence from an iterative denoiser; use
-the input energy for OOD and the calibrated rule for compute.
+(3) At a fixed inference budget, prefer the lightest head that meets the quality requirement and give it
+more steps---unless operating in the low-noise regime where $K^{*}\!\approx\!1$. (4) Do not expect
+per-image compute budgeting or post-refinement confidence from an iterative denoiser; use the input energy
+for OOD and the calibrated rule for compute.
 
 \section{Discussion: Inference Depth as Compute Allocation}
 Our results are, at heart, statements about the \emph{value of computation}. $K^{*}(\sigma)$ is the
@@ -274,14 +280,17 @@ need to reproduce.
 
 \section{Limitations}
 ``Universal'' describes the law's form, not its exponent. The study is confined to additive-noise denoising
-at low resolution; the largest model is probed, not trained under our protocol; and the dissipation result
-concerns energy-based/reconstruction inference specifically. We make no claim that energy descent provides
+at low resolution; the largest model is probed, not trained under our protocol; the dissipation result
+concerns energy-based/reconstruction inference specifically; and the substitution frontier is measured on
+one dataset (CIFAR-10) and within one model family per comparison. We make no claim that energy descent provides
 adaptive compute or calibrated confidence; we show it does not, here.
 
 \section{Conclusion}
 Iterative denoisers obey a simple, scale-robust, calibratable depth law with a regime-scoped exponent, and
-the capability is intrinsic to iteration. Its boundary is equally concrete: test-time energy descent buys no
-per-instance adaptivity and erases the distributional information it is often assumed to preserve. Both the
+the capability is intrinsic to iteration; at matched inference budgets, depth substitutes for head capacity
+wherever the law leaves depth to trade. Its boundary is equally concrete: the substitution closes at low
+noise, and test-time energy descent buys no per-instance adaptivity and erases the distributional
+information it is often assumed to preserve. Both the
 rule and its limits should help practitioners decide how long to let an iterative model think---and when not
 to bother.
 

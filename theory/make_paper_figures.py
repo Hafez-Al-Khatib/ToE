@@ -87,6 +87,45 @@ ax.legend(fontsize=7.5, frameon=False, loc="lower left")
 ax.grid(True, which="both", alpha=0.2)
 save(fig, "fig_semiconvergence")
 
+# ---- Frontier figure (from remote sweep parts; skipped if absent) ----
+import sys
+sys.path.insert(0, str(ROOT / "experiments"))
+try:
+    from frontier_analysis import curve_from_psnr
+    PARTS = ROOT / "outputs/inference_frontier/parts"
+    SIGMAS = ["0.05", "0.10", "0.15", "0.20", "0.30"]
+    MODELS = [  # (tag, label, color, marker) in ascending FLOPs/step
+        ("group_kan_8k", "GroupKAN-8K", "#2ca02c", "v"),
+        ("unet", "U-Net-1.1M", "#8c564b", "D"),
+        ("kan_32k", "KAN-32K", "#1f77b4", "o"),
+        ("group_kan_32k", "GroupKAN-32K", "#e07b39", "^"),
+        ("conv_mlp_gelu", "ConvMLP-560K", "#7f7f7f", "s"),
+        ("kan_110k", "KAN-110K", "#d62728", "*"),
+    ]
+    if PARTS.exists() and len(list(PARTS.glob("*.json"))) >= 60:
+        fig, axes = plt.subplots(1, 5, figsize=(13, 2.9), sharex=True)
+        for ax, sig in zip(axes, SIGMAS):
+            for tag, label, col, mk in MODELS:
+                curves = []
+                for seed in (0, 1):
+                    d = json.loads((PARTS / f"{tag}_s{sig}_seed{seed}.json").read_text())
+                    fl, ps = curve_from_psnr(d["psnr_per_step"], d["flops_step"], d["psnr_k0"])
+                    curves.append(ps)
+                ps = np.mean(curves, axis=0)
+                ax.plot(fl[1:], ps[1:], "-", marker=mk, color=col, lw=1.3, ms=2.6,
+                        label=label if sig == SIGMAS[0] else None)
+            ax.set_xscale("log")
+            ax.set_title(f"$\\sigma={sig}$", fontsize=9)
+            ax.tick_params(labelsize=7.5)
+            ax.grid(True, which="both", alpha=0.15)
+        axes[0].set_ylabel("PSNR (dB)", fontsize=9)
+        axes[2].set_xlabel("cumulative inference FLOPs / image", fontsize=9)
+        axes[0].legend(fontsize=6.2, frameon=False, loc="lower left")
+        plt.tight_layout()
+        save(fig, "frontier")
+except ImportError:
+    print("frontier_analysis not importable; skipping frontier figure")
+
 # ---- 3./4. Copy archived figures ----
 for src, dst in [("outputs/theory/universality", "fig_universality"),
                  ("outputs/theory/corruption_phase_diagram", "fig_phase_diagram")]:
