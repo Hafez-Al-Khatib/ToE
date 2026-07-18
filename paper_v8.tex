@@ -31,8 +31,10 @@ costs at most $0.35$\,dB. The law is also corruption-conditioned---under prior-o
 stochastic corruptions and breaks for deterministic ones---delimiting when test-time compute helps at all.
 Second, at fixed inference FLOPs and under a pre-registered criterion, descent depth \emph{substitutes}
 for head capacity: a 32K-parameter energy head given extra steps beats a $3.4\times$ costlier head by up
-to $3.9$\,dB at matched budgets, and the costlier head's unconstrained-budget peak advantage is at most
-$0.09$\,dB---oversized energy heads are Pareto-dominated wherever the law leaves depth to trade. Third,
+to $3.9$\,dB at matched budgets; the costlier head's unconstrained-budget peak advantage is at most
+$0.12$\,dB across three independent training-seed pairs; and heads scaled to $30$M parameters under the
+same recipe peak no higher than the 32K head---oversized energy heads are Pareto-dominated wherever the
+law leaves depth to trade. Third,
 two limits. \textbf{(i)} Per-instance depth variation is small relative to the cross-$\sigma$ law
 (s.d.\ $0.1$--$2.0$ steps vs.\ a $1$--$11$ step range across noise levels), so the noise level, not the
 instance, carries the allocation signal. \textbf{(ii)} Refinement erases the separability of the energy as
@@ -64,7 +66,8 @@ breaks for deterministic ones ($K^{*}\!\approx\!0$), delimiting when test-time c
 \item \textbf{A substitution frontier.} At fixed inference FLOPs, and under a criterion pre-registered
 before data collection, a lighter energy head taking more descent steps beats a $3.4\times$ costlier head
 by $+0.8$ to $+3.9$\,dB for $\sigma\geq0.10$ in both seeds---and the costlier head's peak advantage at
-\emph{any} budget is $\leq0.09$\,dB, so the oversized head is Pareto-dominated. At $\sigma=0.05$,
+\emph{any} budget is $\leq0.12$\,dB, replicated across three training-seed pairs and unchanged by scaling
+heads to $30$M parameters, so oversized heads are Pareto-dominated. At $\sigma=0.05$,
 $K^{*}\!\approx\!1$ leaves no depth to trade and the heads tie (Sec.~\ref{sec:frontier}).
 \item \textbf{Two negative results.} Per-instance depth variation adds little over the noise-level rule
 (Sec.~\ref{sec:adaptive}), and refinement erases the separability of the energy score on lightly
@@ -212,10 +215,15 @@ residual ($\mathbf{x}-h\!*\!\mathbf{x}\neq0$ for blur), that residual is structu
 signal-correlated---outside the span of what the score field was trained to remove. Inverting it requires
 the forward operator (plug-and-play, RED, diffusion posterior sampling
 \citep{venkatakrishnan2013,romano2017,chung2023}) or degradation-specific training, under which iterative
-restoration of blur \emph{does} convert steps into quality \citep{bansal2022,delbracio2023}. Test-time
-compute for a \emph{DSM-trained, prior-only} descent is thus corruption-conditioned: useful for stochastic
-corruptions, inert for deterministic ones. (One caveat: the JPEG row is the weakest---its $K^{*}$ is
-$0$--$2$ and weakly increasing---so the dichotomy rests mainly on blur.)
+restoration of blur \emph{does} convert steps into quality \citep{bansal2022,delbracio2023}. We ran this
+control: an identical energy head trained on blurred--clean pairs (a blur-residual objective replacing
+the DSM noise residual) converts steps into quality on blur---$+0.9$ to $+2.8$\,dB over its single-pass
+output, with $K^{*}$ growing from $6$ to beyond our $K{=}30$ sweep as severity increases---whereas the
+DSM-trained heads give $K^{*}\!\approx\!0$. The boundary tracks the training objective, as claimed; we do
+not fit a severity law for the control because its $K^{*}$ is cap-censored. Test-time compute for a
+\emph{DSM-trained, prior-only} descent is thus corruption-conditioned: useful for stochastic corruptions,
+inert for deterministic ones. (One caveat: the JPEG row is the weakest---its $K^{*}$ is $0$--$2$ and
+weakly increasing---so the dichotomy rests mainly on blur.)
 \begin{table}[h]\centering
 \begin{tabular}{lccc}
 \toprule
@@ -263,8 +271,16 @@ pre-registered requirement was $3/5$). The advantage is not an artifact of march
 its optimum: at a $1.4$\,GFLOP budget slice ($\sigma{=}0.30$), the 110K head's best achievable PSNR at
 \emph{any} depth within budget is ${\sim}19.7$\,dB versus the 32K head's $23.65$\,dB. The deeper fact
 behind the frontier is that capacity buys almost nothing here: at every noise level the 110K head's
-semiconvergence \emph{peak} exceeds the 32K head's by only $+0.05$ to $+0.09$\,dB, at $3.4\times$ the
-per-step cost---the oversized head is Pareto-dominated. Substitution is therefore bounded by the light
+semiconvergence \emph{peak} exceeds the 32K head's by only $+0.04$ to $+0.12$\,dB, at $3.4\times$ the
+per-step cost---the oversized head is Pareto-dominated. Both facts survive training stochasticity:
+retraining both heads from scratch with two fresh training seeds under the matched recipe reproduces the
+pre-registered verdict (PASS at $3/5$ noise levels in both evaluation seeds, for both training seeds)
+with peak gaps in the same $+0.04$--$+0.12$\,dB band. They also survive scale: heads of $1$M, $8$M, and
+$30$M parameters trained under the same recipe peak \emph{no higher} than the 32K head at any noise
+level (within $-0.8$ to $-0.4$\,dB of it), while a single step of the $30$M head ($122.8$\,GF) costs
+$34\times$ the 32K head's entire $30$-step trajectory. Under this recipe and data budget, parameter
+count between $33$K and $30$M buys no peak quality at all---though we note matched epochs need not mean
+matched convergence for the largest heads. Substitution is therefore bounded by the light
 head's own peak (depth can never buy quality above it) and closes where the law leaves no depth to trade:
 at $\sigma{=}0.05$, $K^{*}{\approx}1$ for both heads, the peak gap is $0.05$\,dB, and no
 ${\geq}0.3$\,dB advantage region exists in either direction---the criterion's one failure is a tie at
@@ -280,7 +296,10 @@ if it were parallel. On our GPU the 32K head costs $0.469$\,ms/step versus $0.86
 \texttt{FlopCounterMode}, a bias favoring exactly the heads the FLOP frontier crowns), so the
 within-family conclusion survives latency accounting in attenuated form. Cross-family FLOP comparisons do
 \emph{not} transfer to latency: the ConvMLP head runs $15.7\times$ faster per step than KAN-32K despite
-counting more FLOPs. We therefore scope the frontier to FLOP-budgeted (throughput-style) serving and
+counting more FLOPs. Batch size matters too: at batch~$1$ every head is launch-bound
+($2$--$7$\,ms/step regardless of size), so more steps means proportionally more latency and the frontier
+inverts for latency-critical single-image serving; the ratios above hold in batched (throughput)
+serving. We therefore scope the frontier to FLOP-budgeted (throughput-style) serving and
 within-family comparisons, and report wall-clock alongside FLOPs. Composed with the depth law, the result
 is a \emph{one-point-calibrated} deployment rule: pick the lightest head whose semiconvergence peak meets
 the quality requirement, and let $K^{*}(\sigma)=C\sigma^{\alpha}$ set the steps---noting that $\sigma$
@@ -385,10 +404,9 @@ need to reproduce.
 ``Universal'' describes the law's form, not its exponent. The study is confined to additive-noise
 denoising at low resolution; the largest model is probed, not trained under our protocol; the dissipation
 result concerns energy-based/reconstruction inference specifically; and the substitution frontier is
-measured on one dataset (CIFAR-10), within one model family per comparison, with one trained model per
-head (two evaluation-noise seeds).
-% BATCHV2: replace the previous clause with the replication result (kan_*_ts1/ts2 parts) when batch v2
-% returns.
+measured on one dataset (CIFAR-10) and within one model family per comparison; its verdict is replicated
+across three independent training-seed pairs, and its scale extension ($1$M--$30$M heads) shares one
+recipe whose epoch budget may undertrain the largest heads.
 A spectral-shrinkage mechanism we hypothesized for the exponent
 ($\alpha=2\gamma/\beta$) failed its direct test---a Gaussian-random-field sweep measured slope
 $-0.09\pm0.44$ against a predicted $-1$---so the mechanism behind the scaling remains open; we report

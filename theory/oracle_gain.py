@@ -46,8 +46,8 @@ def main():
         noisy_all = (images + noise_for(images, sigma, SEED)).clamp(-1, 1)
         per_step = []
         for b in range(0, N_IMAGES, BATCH):
-            clean = images[b:b + BATCH]
-            noisy = noisy_all[b:b + BATCH]
+            clean = images[b:b + BATCH].to(device)
+            noisy = noisy_all[b:b + BATCH].to(device)
             states = sequential_denoise_record(model, noisy, K_max=K_MAX)
             per_step.append(np.stack([psnr_batch(s, clean) for s in states]))
         per_step = np.concatenate(per_step, axis=1)      # (K_MAX, n)
