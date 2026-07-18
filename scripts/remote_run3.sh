@@ -7,6 +7,7 @@ set -uo pipefail
 
 PY=${PY:-python3}
 LOG=remote_run3.log
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 echo "[v3] start $(date)" | tee -a "$LOG"
 
 $PY -c "import torch; assert torch.cuda.is_available(), 'CUDA required'" | tee -a "$LOG"

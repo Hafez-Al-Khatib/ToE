@@ -40,9 +40,18 @@ def stl_loader(n_train, seed):
                                     download=True, transform=tf)
     subset = torch.utils.data.Subset(ds, list(range(n_train)))
     g = torch.Generator().manual_seed(seed)
-    return torch.utils.data.DataLoader(subset, batch_size=128, shuffle=True,
-                                       generator=g, num_workers=2,
-                                       pin_memory=True, drop_last=True)
+    return torch.utils.data.DataLoader(subset, batch_size=MICRO_BATCH,
+                                       shuffle=True, generator=g,
+                                       num_workers=2, pin_memory=True,
+                                       drop_last=True)
+
+
+# Memory: the DSM double-backward (create_graph=True) at 64x64 with batch
+# 128 OOMs a 40GB A100 for the 110K head. Gradient accumulation (micro-
+# batch 32 x 4) reproduces the batch-128 gradient exactly -- these models
+# have no batch-dependent layers -- so the matched recipe is preserved.
+MICRO_BATCH = 32
+ACC = 128 // MICRO_BATCH
 
 
 def train_one(model, loader, device, n_epochs, tag):
@@ -53,29 +62,35 @@ def train_one(model, loader, device, n_epochs, tag):
     history = []
     for ep in range(1, n_epochs + 1):
         model.train()
-        tot, nb = 0.0, 0
+        tot, nsteps, micro = 0.0, 0, 0
+        opt.zero_grad()
         for batch in loader:
             x = batch[0].to(device)
-            opt.zero_grad()
             if use_amp:
                 with torch.amp.autocast('cuda'):
-                    loss = model.loss(x, SIGMA_TRAIN)
+                    loss = model.loss(x, SIGMA_TRAIN) / ACC
                 scaler.scale(loss).backward()
-                scaler.unscale_(opt)
-                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                scaler.step(opt)
-                scaler.update()
             else:
-                loss = model.loss(x, SIGMA_TRAIN)
+                loss = model.loss(x, SIGMA_TRAIN) / ACC
                 loss.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                opt.step()
-            tot += loss.item()
-            nb += 1
+            tot += loss.item() * ACC
+            micro += 1
+            if micro % ACC == 0:
+                if use_amp:
+                    scaler.unscale_(opt)
+                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    scaler.step(opt)
+                    scaler.update()
+                else:
+                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    opt.step()
+                opt.zero_grad()
+                nsteps += 1
         sched.step()
-        history.append(tot / nb)
+        history.append(tot / max(micro, 1))
         if ep <= 3 or ep % 10 == 0 or ep == n_epochs:
-            print(f"  [{tag}] ep {ep:>3d}/{n_epochs}  loss={tot / nb:.5f}")
+            print(f"  [{tag}] ep {ep:>3d}/{n_epochs}  loss={tot / micro:.5f}"
+                  f"  ({nsteps} opt steps)")
     return history
 
 
@@ -107,9 +122,13 @@ def main():
         hist = train_one(model, loader, device, args.epochs, tag)
         torch.save(model.state_dict(), path)
         log[tag] = {'n_params': n_par, 'final_loss': hist[-1],
-                    'seconds': time.time() - t0, 'checkpoint': str(path)}
+                    'seconds': time.time() - t0, 'checkpoint': str(path),
+                    'micro_batch': MICRO_BATCH, 'acc_steps': ACC}
         log_path.write_text(json.dumps(log, indent=2))
         print(f'[saved] {path}  ({time.time() - t0:.0f}s)')
+        del model
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
 
 if __name__ == '__main__':

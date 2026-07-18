@@ -34,8 +34,9 @@ steps beats a $3.4\times$ costlier head by up to $3.9$\,dB at matched budgets, w
 best advantage at any budget is $0.12$\,dB, a gap that replicates across three training seeds and does
 not grow when heads are scaled to 30M parameters. Oversized energy heads are a poor use of inference
 compute wherever the law leaves depth to trade. We close with two negative results: adapting depth per
-image adds little beyond the noise-level rule, and refinement erases the energy score's ability to flag
-out-of-distribution inputs when corruption is light, though the ordering reverses when it is heavy.
+image is worth at most $0.13$\,dB even with oracle stopping, and refinement erases the energy score's
+ability to flag out-of-distribution inputs when corruption is light, though the ordering reverses when
+it is heavy.
 Classical semiconvergence theory explains why quality rises and then decays, but not the sign or the
 value of the exponent. That mechanism remains open.
 \end{abstract}
@@ -64,10 +65,10 @@ by $+0.8$ to $+3.9$\,dB for $\sigma\geq0.10$ in both seeds---and the costlier he
 \emph{any} budget is $\leq0.12$\,dB, replicated across three training-seed pairs and unchanged by scaling
 heads to $30$M parameters, so oversized heads are Pareto-dominated. At $\sigma=0.05$,
 $K^{*}\!\approx\!1$ leaves no depth to trade and the heads tie (Sec.~\ref{sec:frontier}).
-\item \textbf{Two negative results.} Per-instance depth variation adds little over the noise-level rule
-(Sec.~\ref{sec:adaptive}), and refinement erases the separability of the energy score on lightly
-corrupted inputs, with an honest reversal under heavy corruption (Sec.~\ref{sec:ood-sub}). Both correct
-natural hypotheses and both are, we argue, the more useful part of the paper.
+\item \textbf{Two negative results.} Oracle per-image depth control gains at most $0.13$\,dB over the
+noise-level rule (Sec.~\ref{sec:adaptive}), and refinement erases the separability of the energy score on
+lightly corrupted inputs, with an honest reversal under heavy corruption (Sec.~\ref{sec:ood-sub}). Both
+correct natural hypotheses and both are, we argue, the more useful part of the paper.
 \end{enumerate}
 We deliberately foreground the limits: the positive law is anticipated in form (though, notably, not in
 sign) by classical early-stopping theory, whereas the boundary---what ``thinking longer'' cannot do for an
@@ -326,13 +327,13 @@ If $K^{*}$ varied enough across inputs, one could budget compute per image. The 
 grows with noise: over $500$ images per level, the per-image $K^{*}$ has standard deviation $0.1$ steps
 at $\sigma{=}0.05$, $0.5$ at $0.10$, $0.7$ at $0.15$, $1.3$ at $0.20$ (range $4$--$21$), and $2.0$ at
 $0.30$ (range $3$--$30$). In every case the spread is small relative to the $1$--$11$ step range the law
-traverses across $\sigma$, so the noise level, not the instance, carries the allocation signal. What
-matters for deployment is what exploiting the residual spread could buy in quality; the flatness of the
-PSNR curves near their peaks (the same flatness that makes the one-point rule cost ${\leq}0.115$\,dB,
-Sec.~\ref{sec:law}) bounds it tightly.
-% BATCHV2: insert oracle-gain numbers from outputs/review_fixes/oracle_gain.json when batch v2 returns:
-% "An oracle stopping each image at its own best depth gains only X.XX dB over the single mean-optimal
-% depth at sigma=0.10/0.20/0.30."
+traverses across $\sigma$, so the noise level, not the instance, carries the allocation signal. The
+decisive quantity is what exploiting the spread could buy: an \emph{oracle} that stops each image at its
+own best depth gains only $+0.12$, $+0.10$, and $+0.13$\,dB over the single mean-optimal depth at
+$\sigma=0.10$, $0.20$, and $0.30$ respectively ($500$ images). Per-image depth control is therefore worth
+at most ${\sim}0.13$\,dB here even with perfect information---about the same as the one-point rule's own
+error ($0.115$\,dB, Sec.~\ref{sec:law}). Adaptive inference-depth allocation, at least for this setting,
+is not where the leverage is.
 
 \subsection{Refinement is information-dissipative}
 \label{sec:ood-sub}
