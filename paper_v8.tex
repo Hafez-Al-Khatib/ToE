@@ -20,29 +20,24 @@ A Depth Law, a Substitution Frontier, and Two Things It Does \emph{Not} Buy}
 \maketitle
 
 \begin{abstract}
-Spending more computation at inference is widely assumed to help. For iterative denoisers---energy-based
-models, score networks, and diffusion---we measure what it buys and, more importantly, bound it. First,
-the optimal number of refinement steps follows $K^{*}(\sigma)=C\sigma^{\alpha}$: the \emph{form} is robust
-across three datasets, five architectures, and a $3000\times$ range of model size ($R^{2}>0.98$), while
-the \emph{exponent} is protocol- and regime-conditional ($1.37$ under one matched protocol;
-$1.13$--$1.61$ across the settings we measure). One calibration point suffices in practice: the rule
-costs at most $0.12$\,dB versus oracle depth, and mis-setting the exponent anywhere in $[1.13,1.6]$
-costs at most $0.35$\,dB. The law is also corruption-conditioned---under prior-only descent it holds for
-stochastic corruptions and breaks for deterministic ones---delimiting when test-time compute helps at all.
-Second, at fixed inference FLOPs and under a pre-registered criterion, descent depth \emph{substitutes}
-for head capacity: a 32K-parameter energy head given extra steps beats a $3.4\times$ costlier head by up
-to $3.9$\,dB at matched budgets; the costlier head's unconstrained-budget peak advantage is at most
-$0.12$\,dB across three independent training-seed pairs; and heads scaled to $30$M parameters under the
-same recipe peak no higher than the 32K head---oversized energy heads are Pareto-dominated wherever the
-law leaves depth to trade. Third,
-two limits. \textbf{(i)} Per-instance depth variation is small relative to the cross-$\sigma$ law
-(s.d.\ $0.1$--$2.0$ steps vs.\ a $1$--$11$ step range across noise levels), so the noise level, not the
-instance, carries the allocation signal. \textbf{(ii)} Refinement erases the separability of the energy as
-an anomaly score on lightly corrupted inputs (far-OOD AUROC $0.92\!\to\!0.77$ by $K{=}30$; near OOD is at
-chance at every depth), so anomalies should be scored \emph{before} refinement there---though under heavy
-corruption the ordering reverses. Classical semiconvergence theory explains the rise-then-decay of
-quality but not the scaling's sign; the mechanism behind the exponent remains open. A one-point rule sets
-the compute budget; oversized heads and post-refinement confidence do not survive the measurement.
+How many refinement steps should an iterative denoiser take? We measure what test-time computation buys
+for energy-based models, score networks, and diffusion-style denoisers, and where its value stops. The
+optimal depth follows a power law, $K^{*}(\sigma)=C\sigma^{\alpha}$. The form of this law is robust: it
+holds across three datasets, five architectures, and a three-thousandfold range of model size
+($R^{2}>0.98$). The exponent is not universal, however. It depends on the measurement protocol and the
+training regime, ranging from $1.13$ to $1.61$ across our settings. In practice one calibration point is
+enough, and using it costs at most $0.12$\,dB relative to oracle depth. The law also has a boundary:
+prior-only descent converts steps into quality for stochastic corruptions but not for deterministic ones
+such as blur, unless the model is trained on them. Under a criterion registered before data collection,
+depth substitutes for capacity at a fixed compute budget. A 32K-parameter energy head given extra descent
+steps beats a $3.4\times$ costlier head by up to $3.9$\,dB at matched budgets, while the costlier head's
+best advantage at any budget is $0.12$\,dB, a gap that replicates across three training seeds and does
+not grow when heads are scaled to 30M parameters. Oversized energy heads are a poor use of inference
+compute wherever the law leaves depth to trade. We close with two negative results: adapting depth per
+image adds little beyond the noise-level rule, and refinement erases the energy score's ability to flag
+out-of-distribution inputs when corruption is light, though the ordering reverses when it is heavy.
+Classical semiconvergence theory explains why quality rises and then decays, but not the sign or the
+value of the exponent. That mechanism remains open.
 \end{abstract}
 
 \section{Introduction}
