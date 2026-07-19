@@ -30,9 +30,10 @@ enough, and using it costs at most $0.12$\,dB relative to oracle depth. The law 
 prior-only descent converts steps into quality for stochastic corruptions but not for deterministic ones
 such as blur, unless the model is trained on them. Under a criterion registered before data collection,
 depth substitutes for capacity at a fixed compute budget. A 32K-parameter energy head given extra descent
-steps beats a $3.4\times$ costlier head by up to $3.9$\,dB at matched budgets, while the costlier head's
-best advantage at any budget is $0.12$\,dB, a gap that replicates across three training seeds and does
-not grow when heads are scaled to 30M parameters. Oversized energy heads are a poor use of inference
+steps beats a $3.4\times$ costlier head by up to $3.9$\,dB at matched budgets, a result that replicates
+across training seeds, holds under a second pre-registered run on STL-10 at $64\times64$, and does not
+reverse when heads are scaled to 30M parameters. The costlier head's best advantage at any budget never
+exceeds $0.20$\,dB. Oversized energy heads are a poor use of inference
 compute wherever the law leaves depth to trade. We close with two negative results: adapting depth per
 image is worth at most $0.13$\,dB even with oracle stopping, and refinement erases the energy score's
 ability to flag out-of-distribution inputs when corruption is light, though the ordering reverses when
@@ -61,10 +62,11 @@ breaks for deterministic ones ($K^{*}\!\approx\!0$), delimiting when test-time c
 (Sec.~\ref{sec:phase}).
 \item \textbf{A substitution frontier.} At fixed inference FLOPs, and under a criterion pre-registered
 before data collection, a lighter energy head taking more descent steps beats a $3.4\times$ costlier head
-by $+0.8$ to $+3.9$\,dB for $\sigma\geq0.10$ in both seeds---and the costlier head's peak advantage at
-\emph{any} budget is $\leq0.12$\,dB, replicated across three training-seed pairs and unchanged by scaling
-heads to $30$M parameters, so oversized heads are Pareto-dominated. At $\sigma=0.05$,
-$K^{*}\!\approx\!1$ leaves no depth to trade and the heads tie (Sec.~\ref{sec:frontier}).
+by up to $+3.9$\,dB at matched budgets---replicated across three training-seed pairs on CIFAR-10,
+confirmed by an independently pre-registered run on STL-10 at $64\times64$, and unchanged by scaling
+heads to $30$M parameters. The costlier head's peak advantage at \emph{any} budget never exceeds
+$0.20$\,dB, so oversized heads are Pareto-dominated; where the law gives $K^{*}\!\approx\!1$, there is no
+depth to trade and the heads tie (Sec.~\ref{sec:frontier}).
 \item \textbf{Two negative results.} Oracle per-image depth control gains at most $0.13$\,dB over the
 noise-level rule (Sec.~\ref{sec:adaptive}), and refinement erases the separability of the energy score on
 lightly corrupted inputs, with an honest reversal under heavy corruption (Sec.~\ref{sec:ood-sub}). Both
@@ -284,6 +286,17 @@ unequal cost, not a win for capacity. A grouped-KAN head in the style of \citet{
 parameters and $32.2$\,MFLOPs/step, extends the frontier to budgets the other heads cannot reach
 (Fig.~\ref{fig:frontier}, leftmost curves).
 
+The frontier is not specific to CIFAR-10 or to $32\times32$ inputs. We pre-registered the identical
+criterion for the same pair of heads trained under the same recipe on STL-10 at $64\times64$
+($475$ vs.\ $1627$\,MFLOPs/step, both measured), before collecting any data. It passes there too:
+$3/5$ noise levels in both seeds ($\sigma\geq0.15$), with advantages again growing with noise
+($+3.0$\,dB at $\sigma{=}0.15$ to $+4.0$\,dB at $\sigma{=}0.30$) over budget ranges spanning
+$1.6$--$7.8$\,GFLOPs/image. The two boundary behaviors also replicate: at $\sigma{=}0.10$ the maximum
+advantage ($+0.24$\,dB) falls below the $0.3$\,dB margin because $K^{*}\!\approx\!2$ leaves little depth
+to trade, and the heavy head's peak advantage never exceeds $0.20$\,dB at any noise level. The mean
+per-image $K^{*}$ runs $1.0$ to $9.3$ across $\sigma$, following the same law form at the higher
+resolution.
+
 Two scoping notes. \emph{Metric:} at each head's own optimal depth ($\sigma{=}0.10$), LPIPS is $0.0201$
 (KAN-110K) vs.\ $0.0207$ (KAN-32K)---a perceptual tie, confirming both the budget-level PSNR advantage
 and the peak-level near-tie are not metric artifacts. \emph{Cost model:} FLOPs price a serial resource as
@@ -400,9 +413,10 @@ need to reproduce.
 ``Universal'' describes the law's form, not its exponent. The study is confined to additive-noise
 denoising at low resolution; the largest model is probed, not trained under our protocol; the dissipation
 result concerns energy-based/reconstruction inference specifically; and the substitution frontier is
-measured on one dataset (CIFAR-10) and within one model family per comparison; its verdict is replicated
-across three independent training-seed pairs, and its scale extension ($1$M--$30$M heads) shares one
-recipe whose epoch budget may undertrain the largest heads.
+measured within one model family per comparison; its verdict is replicated across three independent
+training-seed pairs on CIFAR-10 and under an independently pre-registered run on STL-10 at $64\times64$,
+and its scale extension ($1$M--$30$M heads) shares one recipe whose epoch budget may undertrain the
+largest heads.
 A spectral-shrinkage mechanism we hypothesized for the exponent
 ($\alpha=2\gamma/\beta$) failed its direct test---a Gaussian-random-field sweep measured slope
 $-0.09\pm0.44$ against a predicted $-1$---so the mechanism behind the scaling remains open; we report
